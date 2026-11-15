@@ -41,6 +41,23 @@ A profile saves a merge setup: the selected branches, their order and the base b
 
 Profiles are kept in this browser's localStorage, together with the other settings.
 
+### Jira panel
+
+The **Jira** panel under Settings lists Jira issues from a JQL query or from one of your saved filters (starred ★ ones first, then the ones you own). Each issue shows the branches whose name contains its key, as a whole token (`ODS-38` doesn't match `ODS-382`). Click that button to add those branches to the selection, or **Select all matching branches** to add the branches of every issue listed. **⌕** filters the branch list by the issue key.
+
+To set it up, open **Settings › Jira** and fill in your Jira Cloud site (for example `https://your-site.atlassian.net`), your email and an [API token](https://id.atlassian.com/manage-profile/security/api-tokens). They are saved in this browser's `localStorage`, like the GitHub token. **Forget Jira token** removes the token.
+
+Jira doesn't accept calls from a browser page, so the page sends these settings to `main.py` with each Jira request and the helper calls Jira. This means the panel only works in local mode, and the Jira section of Settings only shows there. The helper only reads from Jira: it lists filters and runs searches.
+
+If you'd rather keep the token out of the browser, leave all three fields empty and give the helper the values instead. Either copy `.env.example` to `.env` next to `main.py` and fill it in (`.env` is git-ignored), or export them in your shell:
+
+```sh
+export JIRA_URL=https://your-site.atlassian.net
+export JIRA_EMAIL=you@example.com
+export JIRA_API_TOKEN=...
+python3 main.py --repo /path/to/your/clone
+```
+
 ### GitHub only
 
 Open `branch-merger.html` directly in a browser (`file://`). In **Settings**, fill in the owner, the repository and a GitHub token. Merges then go through the GitHub API and only remote branches are listed.
@@ -58,8 +75,8 @@ Use a fine-grained token scoped to that one repository with **Contents: Read and
 
 `localStorage` belongs to one browser and one origin, so `file://`, `http://127.0.0.1:8765` and every other port each keep their own data. To carry it over, open **Settings > Backup**:
 
-- **Export to clipboard** copies everything this page stores (settings, profiles, selection, history and the ahead/behind cache) as JSON. The GitHub token is left out unless **Include GitHub token** is ticked. If the browser blocks the clipboard, the JSON is shown to copy by hand.
-- **Import…** opens a box to paste that JSON into. Importing replaces everything stored in this browser, then reloads the page. When the backup has no token, the token already in this browser is kept. Text that isn't a backup is rejected and nothing changes.
+- **Export to clipboard** copies everything this page stores (settings, profiles, selection, history and the ahead/behind cache) as JSON. The GitHub and Jira tokens are left out unless **Include GitHub and Jira tokens** is ticked. If the browser blocks the clipboard, the JSON is shown to copy by hand.
+- **Import…** opens a box to paste that JSON into. Importing replaces everything stored in this browser, then reloads the page. When the backup has no tokens, the tokens already in this browser are kept. Text that isn't a backup is rejected and nothing changes.
 
 ## Requirements
 
