@@ -1,0 +1,647 @@
+#!/usr/bin/env python3
+"""
+Local helper for Branch Merger: serves branch-merger.html and lets it list and merge the
+branches of your local clone with git, local branches included.
+
+    python3 infrastructure/scripts/github/branch-merger-local.py [--port 8765] [--repo PATH]
+
+then open http://127.0.0.1:8765 (opened as a file, the page only talks to GitHub).
+
+Apply cuts the new branch from the base and merges every selected branch into it, in order,
+inside a temporary git worktree: your working copy, current branch and uncommitted changes
+are never touched, and a conflict is aborted and reported instead of left behind. The new
+branch is only created locally; push it yourself.
+
+Only listens on 127.0.0.1. API requests must carry the X-Branch-Merger header and come
+from this server's own origin, so other web pages open in the browser cannot call it.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+HERE = Path(__file__).resolve().parent
+PAGE = HERE / "branch-merger.html"
+REMOTE = "origin"
+# branches that must never be the new branch (same rule as the page)
+PROTECTED = re.compile(r"^(master|main|staging|development|release/.*|hotfix/.*)$")
+SHA = re.compile(r"^[0-9a-f]{7,40}$")
+API_HEADER = "X-Branch-Merger"
+GIT_TIMEOUT = 300
+# conflict view: lines shown around each conflict, and at most this many lines per file
+CONFLICT_CONTEXT = 3
+CONFLICT_MAX_LINES = 2000
+# the in-memory commits of a dry run need an identity, whatever the user's config says
+DRY_RUN_IDENTITY = {
+    "GIT_AUTHOR_NAME": "Branch Merger dry run",
+    "GIT_AUTHOR_EMAIL": "dry-run@branch-merger.invalid",
+    "GIT_COMMITTER_NAME": "Branch Merger dry run",
+    "GIT_COMMITTER_EMAIL": "dry-run@branch-merger.invalid",
+}
+# fetch and apply change refs; run them one at a time
+WRITE_LOCK = threading.Lock()
+
+
+class GitError(Exception):
+    pass
+
+
+def conflict_kinds(lines: list[str]) -> list[str]:
+    """Kind of each line of a file with diff3 conflict markers (see `conflict_hunks`)."""
+    kinds: list[str] = []
+    region = None
+    for text in lines:
+        if text.startswith("<<<<<<<"):
+            kind, region = "m-ours", "ours"
+        elif region and text.startswith("|||||||"):
+            kind, region = "m-base", "base"
+        elif region and text.rstrip() == "=======":
+            kind, region = "m-sep", "theirs"
+        elif region and text.startswith(">>>>>>>"):
+            kind, region = "m-theirs", None
+        else:
+            kind = region or "ctx"
+        kinds.append(kind)
+    return kinds
+
+
+def conflict_ranges(kinds: list[str]) -> list[list[int]]:
+    """[first, last] line indexes of each conflict plus its context, overlaps joined."""
+    ranges: list[list[int]] = []
+    for i, kind in enumerate(kinds):
+        if kind == "ctx":
+            continue
+        lo = max(i - CONFLICT_CONTEXT, 0)
+        hi = min(i + CONFLICT_CONTEXT, len(kinds) - 1)
+        if ranges and lo <= ranges[-1][1] + 1:
+            ranges[-1][1] = max(ranges[-1][1], hi)
+        else:
+            ranges.append([lo, hi])
+    return ranges
+
+
+class Repo:
+    def __init__(self, path: Path):
+        self.path = path
+
+    def run(
+        self,
+        *args: str,
+        cwd: Path | None = None,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess:
+        result = subprocess.run(  # noqa: S603 - fixed git binary, arguments passed as a list
+            ["git", *args],  # noqa: S607
+            cwd=cwd or self.path,
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT,
+            check=False,
+            # never wait for a credentials prompt nobody can see: fail instead
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0", **(env or {})},
+            # file contents (conflict view) need not be valid UTF-8
+            errors="replace",
+        )
+        if check and result.returncode != 0:
+            raise GitError(
+                (result.stderr or result.stdout).strip() or f"git {args[0]} failed"
+            )
+        return result
+
+    def out(
+        self, *args: str, cwd: Path | None = None, env: dict[str, str] | None = None
+    ) -> str:
+        return self.run(*args, cwd=cwd, env=env).stdout.strip()
+
+    def resolve(self, name: str) -> str:
+        """Commit sha of a branch listed by `branches()`: `x` (local) or `origin/x`."""
+        ref = (
+            f"refs/remotes/{name}"
+            if name.startswith(f"{REMOTE}/")
+            else f"refs/heads/{name}"
+        )
+        result = self.run(
+            "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}", check=False
+        )
+        if result.returncode != 0:
+            msg = f"No such branch: {name}"
+            raise GitError(msg)
+        return result.stdout.strip()
+
+    def counts(self, left: str, right: str) -> tuple[int, int]:
+        """(commits only in `right`, commits only in `left`), i.e. (ahead, behind) of right."""
+        behind, ahead = self.out(
+            "rev-list", "--left-right", "--count", f"{left}...{right}"
+        ).split()
+        return int(ahead), int(behind)
+
+    def branches(self) -> list[dict]:
+        """
+        Local branches and the remote's branches. A remote branch with a local branch of the
+        same name is `shadowed`: the page lists the local one (with how it compares to the
+        remote) and offers the remote one only as a base.
+        """
+        lines = self.out(
+            "for-each-ref",
+            "--format=%(refname)%00%(objectname)",
+            "refs/heads",
+            f"refs/remotes/{REMOTE}",
+        ).splitlines()
+        local: dict[str, str] = {}
+        remote: dict[str, str] = {}
+        for line in lines:
+            ref, sha = line.split("\0")
+            if ref.startswith("refs/heads/"):
+                local[ref.removeprefix("refs/heads/")] = sha
+            elif ref != f"refs/remotes/{REMOTE}/HEAD":
+                remote[ref.removeprefix(f"refs/remotes/{REMOTE}/")] = sha
+
+        items = []
+        for name, sha in local.items():
+            on_remote = None
+            if name in remote:
+                ahead, behind = (
+                    (0, 0) if remote[name] == sha else self.counts(remote[name], sha)
+                )
+                on_remote = {"sha": remote[name], "ahead": ahead, "behind": behind}
+            items.append(
+                {
+                    "name": name,
+                    "sha": sha,
+                    "kind": "local",
+                    "remote": on_remote,
+                    "shadowed": False,
+                }
+            )
+        for name, sha in remote.items():
+            items.append(
+                {
+                    "name": f"{REMOTE}/{name}",
+                    "sha": sha,
+                    "kind": "remote",
+                    "remote": None,
+                    "shadowed": name in local,
+                }
+            )
+        return sorted(items, key=lambda item: item["name"])
+
+    def check_new_branch_name(self, name: str) -> None:
+        if self.run("check-ref-format", "--branch", name, check=False).returncode != 0:
+            msg = f'"{name}" is not a valid branch name.'
+            raise GitError(msg)
+        if PROTECTED.match(name):
+            msg = f'"{name}" is a protected branch name. Pick another one.'
+            raise GitError(msg)
+        if (
+            self.run(
+                "show-ref", "--verify", "--quiet", f"refs/heads/{name}", check=False
+            ).returncode
+            == 0
+        ):
+            msg = f'"{name}" already exists. Pick a new name.'
+            raise GitError(msg)
+
+    def dry_run(self, base: str, heads: list[str]) -> list[dict]:
+        """
+        Merge `heads` into `base` in order, in memory only (`git merge-tree`): no worktree,
+        branch or ref is touched. Each clean merge is chained through an unreferenced commit
+        (removed by git gc) so the next branch is checked against everything merged before
+        it, like Apply. A conflicting branch is left out of the chain: the branches after it
+        are checked as if it had been removed (Apply itself would stop there).
+        """
+        current = self.resolve(base)
+        results: list[dict] = []
+        for head in heads:
+            try:
+                sha = self.resolve(head)
+            except GitError as e:
+                results.append({"head": head, "status": "error", "message": str(e)})
+                continue
+            ancestor = self.run(
+                "merge-base", "--is-ancestor", sha, current, check=False
+            )
+            if ancestor.returncode == 0:
+                results.append({"head": head, "status": "contained"})
+                continue
+            # diff3 markers: the conflict view also shows what the common ancestor had
+            merge = self.run(
+                "-c",
+                "core.quotePath=false",
+                "-c",
+                "merge.conflictStyle=diff3",
+                "merge-tree",
+                "--write-tree",
+                "--name-only",
+                current,
+                sha,
+                check=False,
+            )
+            # tree, conflicted files, a blank line, then the "Auto-merging"/"CONFLICT" messages
+            files_part, _, messages_part = merge.stdout.partition("\n\n")
+            lines = files_part.splitlines()
+            if merge.returncode == 0:
+                current = self.out(
+                    "commit-tree",
+                    lines[0],
+                    "-p",
+                    current,
+                    "-p",
+                    sha,
+                    "-m",
+                    f"Branch Merger dry run: merge {head}",
+                    env=DRY_RUN_IDENTITY,
+                )
+                results.append({"head": head, "status": "clean"})
+            elif merge.returncode == 1:
+                files = list(dict.fromkeys(line for line in lines[1:] if line))
+                conflicts = [
+                    m for m in messages_part.splitlines() if m.startswith("CONFLICT")
+                ]
+                notes = {
+                    path: [
+                        m
+                        for m in conflicts
+                        if re.search(rf"(?<![\w/.-]){re.escape(path)}(?![\w/-])", m)
+                    ]
+                    for path in files
+                }
+                # the merged tree (markers included) stays readable until git gc
+                results.append(
+                    {
+                        "head": head,
+                        "status": "conflict",
+                        "files": files,
+                        "tree": lines[0],
+                        "notes": notes,
+                    }
+                )
+            else:
+                message = (
+                    merge.stderr or merge.stdout
+                ).strip() or "git merge-tree failed"
+                results.append({"head": head, "status": "error", "message": message})
+        return results
+
+    def conflict_hunks(self, tree: str, path: str) -> dict:
+        """
+        The conflicted regions of `path` in a dry-run merge `tree` (diff3 markers), each with
+        CONFLICT_CONTEXT lines around it, as [line number, kind, text] rows. Kinds: ctx,
+        ours, base, theirs, and m-ours/m-base/m-sep/m-theirs for the marker lines.
+        """
+        blob = self.run("cat-file", "-p", f"{tree}:{path}", check=False)
+        if blob.returncode != 0:  # e.g. modify/delete: the path is not in the result
+            return {"missing": True, "binary": False, "hunks": [], "truncated": False}
+        if "\0" in blob.stdout:
+            return {"missing": False, "binary": True, "hunks": [], "truncated": False}
+
+        lines = blob.stdout.splitlines()
+        kinds = conflict_kinds(lines)
+        hunks, total, truncated = [], 0, False
+        for lo, end in conflict_ranges(kinds):
+            hi = min(end, lo + CONFLICT_MAX_LINES - total - 1)
+            if hi < end or total >= CONFLICT_MAX_LINES:
+                truncated = True
+            if hi < lo:
+                break
+            hunks.append([[i + 1, kinds[i], lines[i]] for i in range(lo, hi + 1)])
+            total += hi - lo + 1
+        return {
+            "missing": False,
+            "binary": False,
+            "hunks": hunks,
+            "truncated": truncated,
+        }
+
+    def push_new_branch(self, name: str) -> tuple[bool, str]:
+        """Push a branch this helper just created to the remote and track it."""
+        if PROTECTED.match(
+            name
+        ):  # never reached: such names are refused before merging
+            return False, f"{name} is protected, not pushed"
+        result = self.run(
+            "push", "--set-upstream", REMOTE, f"{name}:refs/heads/{name}", check=False
+        )
+        if result.returncode != 0:
+            return False, (result.stderr or result.stdout).strip() or "git push failed"
+        return True, f"Pushed {name} to {REMOTE}"
+
+    def merge_into_new_branch(
+        self, name: str, base: str, heads: list[str], *, delete_on_fail: bool
+    ) -> dict:
+        """
+        Cut `name` from `base` and merge `heads` into it in order, in a temporary worktree.
+        Returns {ok, result, log, created}; a conflict aborts that merge and stops there.
+        """
+        self.check_new_branch_name(name)
+        base_sha = self.resolve(base)
+        head_shas = [(head, self.resolve(head)) for head in heads]
+        run = MergeRun(self, name, base)
+        run.say(f"Base {base}")
+        run.say(f"  at {base_sha[:8]}", "muted")
+
+        worktree = Path(tempfile.mkdtemp(prefix="branch-merger-"))
+        created = False
+        try:
+            self.run("worktree", "add", "--quiet", "-b", name, str(worktree), base_sha)
+            created = True
+            run.say(f"Created {name} (local)", "ok")
+            failed = next(
+                (head for head, sha in head_shas if not run.merge(worktree, head, sha)),
+                None,
+            )
+            if failed is None:
+                return run.done()
+            if delete_on_fail:
+                self._remove_worktree(worktree)
+                self.run("branch", "-D", name, check=False)
+                created = False
+                run.say(f"Deleted {name}", "warn")
+            else:
+                run.say(f"{name} kept (local) with the merges before {failed}", "warn")
+            return run.failed(failed, created=created)
+        except Exception:
+            if created and delete_on_fail:
+                self._remove_worktree(worktree)
+                self.run("branch", "-D", name, check=False)
+            raise
+        finally:
+            self._remove_worktree(worktree)
+
+    def _remove_worktree(self, worktree: Path) -> None:
+        self.run("worktree", "remove", "--force", str(worktree), check=False)
+        shutil.rmtree(worktree, ignore_errors=True)
+        self.run("worktree", "prune", check=False)
+
+
+class MergeRun:
+    """The log and counters of one apply."""
+
+    def __init__(self, repo: Repo, name: str, base: str):
+        self.repo = repo
+        self.name = name
+        self.merged_heads = [base]
+        self.log: list[dict] = []
+        self.merged = 0
+        self.up_to_date = 0
+        self.conflicted = False
+
+    def say(self, text: str, cls: str = "") -> None:
+        self.log.append({"text": text, "cls": cls})
+
+    def merge(self, worktree: Path, head: str, sha: str) -> bool:
+        """Merge one branch; False (merge aborted, reason logged) if it could not."""
+        repo = self.repo
+        if (
+            repo.run(
+                "merge-base", "--is-ancestor", sha, "HEAD", cwd=worktree, check=False
+            ).returncode
+            == 0
+        ):
+            self.up_to_date += 1
+            self.say(f"  = {head}  already contained, nothing to merge", "muted")
+            return True
+        # --no-verify: like the GitHub API merge, no local hooks run on the merge commit
+        message = f"Merge branch '{head}' into {self.name}"
+        result = repo.run(
+            "merge",
+            "--no-ff",
+            "--no-verify",
+            "-m",
+            message,
+            sha,
+            cwd=worktree,
+            check=False,
+        )
+        if result.returncode == 0:
+            self.merged += 1
+            self.merged_heads.append(head)
+            short = repo.out("rev-parse", "--short=8", "HEAD", cwd=worktree)
+            self.say(f"  ✓ {head}  → {short}", "ok")
+            return True
+
+        files = repo.out(
+            "diff", "--name-only", "--diff-filter=U", cwd=worktree
+        ).splitlines()
+        repo.run("merge", "--abort", cwd=worktree, check=False)
+        self.conflicted = bool(files)
+        if files:
+            with_what = " + ".join(self.merged_heads)
+            self.say(
+                f"  ✗ {head}  conflicts with {with_what} in {', '.join(files)}", "err"
+            )
+        else:
+            self.say(
+                f"  ✗ {head}  merge failed: {(result.stderr or result.stdout).strip()}",
+                "err",
+            )
+        return False
+
+    def done(self) -> dict:
+        self.say(
+            f"Done: {self.merged} merged, {self.up_to_date} already contained.", "ok"
+        )
+        result = f"{self.merged} merged" + (
+            f", {self.up_to_date} up to date" if self.up_to_date else ""
+        )
+        return {"ok": True, "result": result, "log": self.log, "created": True}
+
+    def failed(self, head: str, *, created: bool) -> dict:
+        outcome = f"Conflict: {head}" if self.conflicted else f"Merge failed: {head}"
+        return {"ok": False, "result": outcome, "log": self.log, "created": created}
+
+
+class Handler(BaseHTTPRequestHandler):
+    repo: Repo
+    port: int
+
+    def log_message(self, fmt: str, *args) -> None:  # quieter than the default
+        sys.stderr.write(
+            f"{self.command} {self.path} {args[1] if len(args) > 1 else ''}\n"
+        )
+
+    # ------------------------------------------------------------------ guards
+
+    def _own_origins(self) -> set[str]:
+        return {f"http://127.0.0.1:{self.port}", f"http://localhost:{self.port}"}
+
+    def _allowed(self, api: bool) -> bool:
+        # Host: stops DNS rebinding (a site resolving its own name to 127.0.0.1).
+        if f"http://{self.headers.get('Host', '')}" not in self._own_origins():
+            return False
+        if not api:
+            return True
+        # A custom header can't be sent cross-origin without a CORS preflight, which this
+        # server never approves; the Origin check covers browsers that send it anyway.
+        origin = self.headers.get("Origin")
+        return self.headers.get(API_HEADER) == "1" and (
+            origin is None or origin in self._own_origins()
+        )
+
+    def _send(self, status: int, body: bytes, content_type: str) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self, status: int, data) -> None:
+        self._send(status, json.dumps(data).encode(), "application/json")
+
+    # ------------------------------------------------------------------ routes
+
+    def do_GET(self) -> None:
+        url = urlparse(self.path)
+        api = url.path.startswith("/api/")
+        if not self._allowed(api):
+            self._json(HTTPStatus.FORBIDDEN, {"error": "Forbidden"})
+            return
+        if url.path in {"/", "/branch-merger.html"}:
+            self._send(HTTPStatus.OK, PAGE.read_bytes(), "text/html; charset=utf-8")
+            return
+        try:
+            if url.path == "/api/info":
+                self._json(
+                    HTTPStatus.OK, {"repo": str(self.repo.path), "remote": REMOTE}
+                )
+            elif url.path == "/api/branches":
+                self._json(HTTPStatus.OK, {"branches": self.repo.branches()})
+            elif url.path == "/api/compare":
+                query = parse_qs(url.query)
+                base, head = query.get("base", [""])[0], query.get("head", [""])[0]
+                if not (SHA.match(base) and SHA.match(head)):
+                    self._json(
+                        HTTPStatus.BAD_REQUEST,
+                        {"error": "base and head must be commit shas"},
+                    )
+                    return
+                ahead, behind = self.repo.counts(base, head)
+                self._json(HTTPStatus.OK, {"ahead": ahead, "behind": behind})
+            elif url.path == "/api/conflict":
+                query = parse_qs(url.query)
+                tree, path = query.get("tree", [""])[0], query.get("path", [""])[0]
+                if not (SHA.match(tree) and path):
+                    self._json(
+                        HTTPStatus.BAD_REQUEST,
+                        {"error": "tree must be a sha and path is required"},
+                    )
+                    return
+                self._json(HTTPStatus.OK, self.repo.conflict_hunks(tree, path))
+            else:
+                self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
+        except GitError as e:
+            self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(e)})
+
+    def do_POST(self) -> None:
+        url = urlparse(self.path)
+        if not self._allowed(api=True):
+            self._json(HTTPStatus.FORBIDDEN, {"error": "Forbidden"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except ValueError:
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "Invalid JSON"})
+            return
+        try:
+            if url.path == "/api/fetch":
+                with WRITE_LOCK:
+                    self.repo.run("fetch", "--prune", "--quiet", REMOTE)
+                self._json(HTTPStatus.OK, {"ok": True})
+            elif url.path == "/api/dry-run":
+                heads = body.get("branches")
+                if not isinstance(heads, list) or not all(
+                    isinstance(h, str) for h in heads
+                ):
+                    self._json(
+                        HTTPStatus.BAD_REQUEST, {"error": "branches must be a list"}
+                    )
+                    return
+                results = self.repo.dry_run(str(body.get("base", "")), heads)
+                self._json(HTTPStatus.OK, {"results": results})
+            elif url.path == "/api/apply":
+                heads = body.get("branches")
+                if (
+                    not isinstance(heads, list)
+                    or not heads
+                    or not all(isinstance(h, str) for h in heads)
+                ):
+                    self._json(
+                        HTTPStatus.BAD_REQUEST,
+                        {"error": "branches must be a non-empty list"},
+                    )
+                    return
+                name = str(body.get("name", "")).strip()
+                with WRITE_LOCK:
+                    result = self.repo.merge_into_new_branch(
+                        name,
+                        str(body.get("base", "")),
+                        heads,
+                        delete_on_fail=bool(body.get("deleteOnFail", True)),
+                    )
+                    # Only a branch whose merges all succeeded is pushed, and only on request.
+                    result["pushed"] = False
+                    if result["ok"] and body.get("push") is True:
+                        pushed, message = self.repo.push_new_branch(name)
+                        result["pushed"] = pushed
+                        result["log"].append(
+                            {
+                                "text": message
+                                if pushed
+                                else f"Push failed: {message}",
+                                "cls": "ok" if pushed else "err",
+                            }
+                        )
+                        result["result"] += ", pushed" if pushed else ", push failed"
+                self._json(HTTPStatus.OK, result)
+            else:
+                self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
+        except GitError as e:
+            self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(e)})
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument(
+        "--repo", type=Path, default=HERE, help="any path inside the repository"
+    )
+    args = parser.parse_args()
+
+    try:
+        top = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],  # noqa: S607
+            cwd=args.repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        sys.exit(f"Not a git repository: {args.repo}")
+
+    Handler.repo = Repo(Path(top))
+    Handler.port = args.port
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    print(
+        f"Branch Merger (local) for {top}\nOpen http://127.0.0.1:{args.port}  (Ctrl+C to stop)"
+    )
+    with contextlib.suppress(KeyboardInterrupt):
+        server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
