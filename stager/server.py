@@ -20,11 +20,12 @@ from . import merge
 from .config import (
     API_HEADER,
     JQL_MAX,
-    PAGE,
     PROTECTED,
     REMOTE,
     REPO_HEADER,
     SHA,
+    STATIC_TYPES,
+    WEB,
 )
 from .conflicts import conflict_hunks
 from .git_repo import GitError, Repo, repo_top
@@ -199,10 +200,19 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.FORBIDDEN, {"error": "Forbidden"})
         elif api:
             self._api(url.path, parse_qs(url.query), {})
-        elif url.path in {"/", "/branch-merger.html"}:
-            self._send(HTTPStatus.OK, PAGE.read_bytes(), "text/html; charset=utf-8")
         else:
+            self._static(url.path)
+
+    def _static(self, path: str) -> None:
+        """A file of web/; / is index.html (so is the page's old name)."""
+        if path in {"/", "/branch-merger.html"}:
+            path = "/index.html"
+        file = (WEB / unquote(path).lstrip("/")).resolve()
+        content_type = STATIC_TYPES.get(file.suffix)
+        if not (content_type and file.is_relative_to(WEB) and file.is_file()):
             self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
+            return
+        self._send(HTTPStatus.OK, file.read_bytes(), content_type)
 
     def do_POST(self) -> None:
         url = urlparse(self.path)

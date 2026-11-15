@@ -7,7 +7,13 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PAGE = ROOT / "branch-merger.html"
+# the page and its files, served as they are (read from disk on every request)
+WEB = ROOT / "web"
+STATIC_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+}
 REMOTE = "origin"
 # branches that must never be the new branch (the page gets this pattern from /api/info)
 PROTECTED = re.compile(r"^(master|main|staging|development|release/.*|hotfix/.*)$")

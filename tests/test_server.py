@@ -51,6 +51,22 @@ class GuardTest(ServerTestCase):
         self.assertEqual(status, 200)
         self.assertIn(b"<html", body)
 
+    def test_static_files(self):
+        for path, kind in (("/app.css", "text/css"), ("/js/app.js", "text/javascript")):
+            with self.subTest(path=path):
+                conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
+                self.addCleanup(conn.close)
+                conn.request("GET", path, headers={"Host": f"127.0.0.1:{self.port}"})
+                res = conn.getresponse()
+                res.read()
+                self.assertEqual(res.status, 200)
+                self.assertTrue(res.getheader("Content-Type").startswith(kind))
+
+    def test_only_web_files_are_served(self):
+        for path in ("/../main.py", "/%2e%2e/main.py", "/js/../../main.py", "/nope.css"):
+            with self.subTest(path=path):
+                self.assertEqual(self.request("GET", path, api=False)[0], 404)
+
     def test_api_needs_the_header(self):
         status, _ = self.request("GET", "/api/info", api=False)
         self.assertEqual(status, 403)
