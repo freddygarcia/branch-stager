@@ -4,7 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Branch Merger</title>
+<!--
+  Served by the helper: run `python3 main.py` and open http://127.0.0.1:8765.
+  The script is in js/ (ES modules, no build step; main.js starts it), the styles in app.css.
+-->
 <link rel="stylesheet" href="app.css">
+<script type="module" src="js/main.js"></script>
 </head>
 <body>
 <header class="topbar" id="profileBar" aria-label="Merge profiles">
@@ -27,30 +32,34 @@
   <h1>Branch Merger</h1>
   <p class="sub">Select branches, press <b>Apply</b>: a new branch is cut from the base branch and the selected branches are merged into it, in order.</p>
 
+  <!-- hidden by js/main.js: modules don't run when the file is opened from disk -->
+  <p class="panel err" id="needsHelper">Branch Merger runs through its local helper: start <code>python3 main.py</code> and open <a href="http://127.0.0.1:8765">http://127.0.0.1:8765</a>.</p>
+  <p class="panel err" id="helperDown" hidden></p>
+
   <section class="panel">
     <details id="settingsBox">
       <summary><b>Settings</b> <span class="muted" id="settingsSummary"></span></summary>
       <div class="grid" style="margin-top:12px">
-        <div id="sourceBox" hidden>
+        <div>
           <label for="source">Source</label>
           <select id="source">
             <option value="local">Local clone (git, local branches included)</option>
             <option value="github">GitHub (remote branches only)</option>
           </select>
         </div>
-        <div class="local-only"><label for="localPath">Repository folder</label><input id="localPath" type="text" spellcheck="false" placeholder="/path/to/your/clone"></div>
-        <div class="github-only"><label for="owner">Owner</label><input id="owner" type="text"></div>
-        <div class="github-only"><label for="repo">Repository</label><input id="repo" type="text"></div>
-        <div class="github-only"><label for="token">GitHub token (stored in this browser)</label><input id="token" type="password" autocomplete="off" placeholder="github_pat_…"></div>
+        <div data-source="local"><label for="localPath">Repository folder</label><input id="localPath" type="text" spellcheck="false" placeholder="/path/to/your/clone"></div>
+        <div data-source="github"><label for="owner">Owner</label><input id="owner" type="text"></div>
+        <div data-source="github"><label for="repo">Repository</label><input id="repo" type="text"></div>
+        <div data-source="github"><label for="token">GitHub token (stored in this browser)</label><input id="token" type="password" autocomplete="off" placeholder="github_pat_…"></div>
         <div><label for="prefix">New branch prefix</label><input id="prefix" type="text"></div>
       </div>
       <div class="row" style="margin-top:12px">
         <label style="margin:0"><input id="deleteOnFail" type="checkbox"> Delete the new branch when a merge conflicts</label>
         <span class="spacer"></span>
-        <button id="forgetToken" class="github-only">Forget token</button>
+        <button id="forgetToken" data-source="github">Forget token</button>
       </div>
 
-      <div id="jiraSettings" class="settings-section">
+      <div class="settings-section">
         <h3>Jira</h3>
         <div class="grid">
           <div><label for="jiraUrl">Jira site</label><input id="jiraUrl" type="text" placeholder="https://your-site.atlassian.net" autocomplete="off"></div>
@@ -76,7 +85,7 @@
         <div id="backupStatus" style="font-size:12.5px;margin-top:6px" hidden></div>
         <form id="importForm" style="margin-top:8px" hidden>
           <label for="importText">Paste a backup copied with Export to clipboard. It replaces everything stored in this browser.</label>
-          <textarea id="importText" rows="6" spellcheck="false" style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace"></textarea>
+          <textarea id="importText" class="mono-box" rows="6" spellcheck="false"></textarea>
           <div class="row" style="margin-top:6px">
             <span class="spacer"></span>
             <button type="button" id="importCancel">Cancel</button>
@@ -188,6 +197,5 @@
   </section>
 </main>
 
-<script src="js/app.js"></script>
 </body>
 </html>

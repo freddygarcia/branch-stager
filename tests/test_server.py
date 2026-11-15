@@ -52,7 +52,7 @@ class GuardTest(ServerTestCase):
         self.assertIn(b"<html", body)
 
     def test_static_files(self):
-        for path, kind in (("/app.css", "text/css"), ("/js/app.js", "text/javascript")):
+        for path, kind in (("/app.css", "text/css"), ("/js/main.js", "text/javascript")):
             with self.subTest(path=path):
                 conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
                 self.addCleanup(conn.close)
