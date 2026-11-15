@@ -207,24 +207,6 @@
         <span class="spacer"></span>
         <button id="forgetToken" class="github-only">Forget token</button>
       </div>
-      <div class="row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-        <b style="font-size:13px">Backup</b>
-        <span class="muted" style="font-size:12.5px">Settings, profiles, selection and history, copied as JSON.</span>
-        <span class="spacer"></span>
-        <label style="margin:0;white-space:nowrap" title="Tokens are secrets: leave this off unless the copy stays with you"><input id="exportToken" type="checkbox"> Include GitHub and Jira tokens</label>
-        <button id="exportData" title="Copy everything stored in this browser to the clipboard">Export to clipboard</button>
-        <button id="importData" title="Paste a backup: it replaces everything stored in this browser">Import…</button>
-      </div>
-      <div id="backupStatus" style="font-size:12.5px;margin-top:6px" hidden></div>
-      <form id="importForm" style="margin-top:8px" hidden>
-        <label for="importText">Paste a backup copied with Export to clipboard. It replaces everything stored in this browser.</label>
-        <textarea id="importText" rows="6" spellcheck="false" style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace"></textarea>
-        <div class="row" style="margin-top:6px">
-          <span class="spacer"></span>
-          <button type="button" id="importCancel">Cancel</button>
-          <button type="submit" class="primary">Import</button>
-        </div>
-      </form>
 
       <div id="jiraSettings" class="settings-section">
         <h3>Jira</h3>
@@ -238,6 +220,27 @@
           <span class="spacer"></span>
           <button id="forgetJiraToken">Forget Jira token</button>
         </div>
+      </div>
+
+      <div id="backupSettings" class="settings-section">
+        <h3>Backup</h3>
+        <div class="row">
+          <span class="muted" style="font-size:12.5px">Settings, Jira setup and query, profiles, selection and history, copied as JSON.</span>
+          <span class="spacer"></span>
+          <label style="margin:0;white-space:nowrap" title="The GitHub token and the Jira API token: leave this off unless the copy stays with you"><input id="exportToken" type="checkbox"> Include tokens and secrets</label>
+          <button id="exportData" title="Copy everything stored in this browser to the clipboard">Export to clipboard</button>
+          <button id="importData" title="Paste a backup: it replaces everything stored in this browser">Import…</button>
+        </div>
+        <div id="backupStatus" style="font-size:12.5px;margin-top:6px" hidden></div>
+        <form id="importForm" style="margin-top:8px" hidden>
+          <label for="importText">Paste a backup copied with Export to clipboard. It replaces everything stored in this browser.</label>
+          <textarea id="importText" rows="6" spellcheck="false" style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace"></textarea>
+          <div class="row" style="margin-top:6px">
+            <span class="spacer"></span>
+            <button type="button" id="importCancel">Cancel</button>
+            <button type="submit" class="primary">Import</button>
+          </div>
+        </form>
       </div>
     </details>
   </section>
@@ -422,6 +425,9 @@
   // so keys added later are exported without touching this code.
   const PREFIX = 'branchMerger.';
   const BACKUP_FORMAT = 'branch-merger-backup';
+  // state fields left out of a backup unless "Include tokens and secrets" is ticked
+  const SECRETS = ['token', 'jiraToken'];
+  const hasSecrets = (s) => SECRETS.some((k) => s?.[k]);
 
   function ownKeys() {
     const keys = [];
@@ -433,14 +439,14 @@
   }
 
   /** The backup as JSON text, and the main state it holds. */
-  function exportData(includeToken) {
+  function exportData(includeSecrets) {
     save();
     saveCompares();
     const data = {};
     for (const k of ownKeys()) {
       try { data[k] = JSON.parse(localStorage.getItem(k)); } catch { data[k] = localStorage.getItem(k); }
     }
-    if (!includeToken && data[KEY]) data[KEY] = { ...data[KEY], token: '', jiraToken: '' };
+    if (!includeSecrets && data[KEY]) data[KEY] = { ...data[KEY], ...Object.fromEntries(SECRETS.map((k) => [k, ''])) };
     const backup = { format: BACKUP_FORMAT, version: 1, exportedAt: new Date().toISOString(), data };
     return { text: JSON.stringify(backup, null, 2), stored: data[KEY] || {} };
   }
@@ -455,10 +461,15 @@
     const entries = Object.entries(file.data).filter(([k]) => k.startsWith(PREFIX));
     if (!entries.length) throw new Error('The backup holds no data.');
     const incoming = Object.fromEntries(entries);
-    // a backup made without the tokens keeps the tokens already in this browser
-    for (const t of ['token', 'jiraToken']) {
-      if (incoming[KEY] && !incoming[KEY][t] && state[t]) incoming[KEY] = { ...incoming[KEY], [t]: state[t] };
-    }
+    // a backup made without the secrets keeps the ones already in this browser. The Jira
+    // token only belongs to the backup's Jira site and email, so it is kept only when they match.
+    const kept = {};
+    const inc = incoming[KEY];
+    if (inc && !inc.token && state.token) kept.token = state.token;
+    if (inc && !inc.jiraToken && state.jiraToken
+      && (inc.jiraUrl || '').trim() === state.jiraUrl.trim()
+      && (inc.jiraEmail || '').trim() === state.jiraEmail.trim()) kept.jiraToken = state.jiraToken;
+    if (inc) incoming[KEY] = { ...inc, ...kept };
     for (const k of ownKeys()) localStorage.removeItem(k);
     for (const [k, v] of Object.entries(incoming)) {
       localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
@@ -467,7 +478,11 @@
   }
 
   const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  const describe = (s) => `${count(s.profiles?.length || 0, 'profile', 'profiles')}, ${count(s.history?.length || 0, 'history entry', 'history entries')}`;
+  const describe = (s) => [
+    count(s.profiles?.length || 0, 'profile', 'profiles'),
+    count(s.history?.length || 0, 'history entry', 'history entries'),
+    ...(s.jiraUrl ? [`Jira ${s.jiraUrl.replace(/^https:\/\//, '')}`] : []),
+  ].join(', ');
   // shown once after the reload that follows an import
   const IMPORTED_NOTE = 'branchMerger:imported';
 
@@ -1565,20 +1580,20 @@
     box.textContent = text;
   };
   $('exportData').addEventListener('click', async () => {
-    const withToken = $('exportToken').checked;
+    const withSecrets = $('exportToken').checked;
     let backup;
     try {
-      backup = exportData(withToken);
+      backup = exportData(withSecrets);
     } catch (e) {
       backupStatus(`Export failed: ${e.message}`, 'err');
       return;
     }
     const { text, stored } = backup;
-    const hasToken = Boolean(stored.token || stored.jiraToken);
-    const tokenNote = withToken && hasToken ? ', tokens included: keep it private' : ', without the tokens';
+    const secret = hasSecrets(stored); // false when left out
+    const tokenNote = secret ? ', tokens and secrets included: keep it private' : ', without tokens or secrets';
     try {
       await navigator.clipboard.writeText(text);
-      backupStatus(`Copied ${describe(stored)} to the clipboard${tokenNote}.`, withToken && hasToken ? 'warn' : 'ok');
+      backupStatus(`Copied ${describe(stored)} to the clipboard${tokenNote}.`, secret ? 'warn' : 'ok');
     } catch {
       // clipboard blocked (permissions, insecure origin): show the text to copy by hand
       $('importForm').hidden = true;

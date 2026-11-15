@@ -73,10 +73,10 @@ Use a fine-grained token scoped to that one repository with **Contents: Read and
 
 ## Backup and moving to another browser
 
-`localStorage` belongs to one browser and one origin, so `file://`, `http://127.0.0.1:8765` and every other port each keep their own data. To carry it over, open **Settings > Backup**:
+`localStorage` belongs to one browser and one origin, so `file://`, `http://127.0.0.1:8765` and every other port each keep their own data. To carry it over, open **Settings › Backup**, at the bottom of Settings:
 
-- **Export to clipboard** copies everything this page stores (settings, profiles, selection, history and the ahead/behind cache) as JSON. The GitHub and Jira tokens are left out unless **Include GitHub and Jira tokens** is ticked. If the browser blocks the clipboard, the JSON is shown to copy by hand.
-- **Import…** opens a box to paste that JSON into. Importing replaces everything stored in this browser, then reloads the page. When the backup has no tokens, the tokens already in this browser are kept. Text that isn't a backup is rejected and nothing changes.
+- **Export to clipboard** copies everything this page stores (settings, the Jira site, email, JQL and filter, profiles, selection, history and the ahead/behind cache) as JSON. Tokens and secrets (the GitHub token and the Jira API token) are left out unless **Include tokens and secrets** is ticked. If the browser blocks the clipboard, the JSON is shown to copy by hand.
+- **Import…** opens a box to paste that JSON into. Importing replaces everything stored in this browser, then reloads the page. When the backup has no tokens, the GitHub token already in this browser is kept, and so is the Jira API token if the backup names the same Jira site and email. Otherwise fill in the Jira token again in **Settings › Jira**. Text that isn't a backup is rejected and nothing changes.
 
 ## Requirements
 
