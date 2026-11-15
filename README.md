@@ -31,12 +31,13 @@ Then open <http://127.0.0.1:8765>, choose **Settings › Source › Local clone*
 
 ### Profiles
 
-A profile saves a merge setup: the selected branches, their order and the base branch. Use profiles to switch quickly between similar merges.
+A profile saves a merge setup: the selected branches, their order and the base branch. Profiles appear as tabs in the bar at the top of the page, so you can switch between similar merges with one click.
 
-- **Save profile**: type a name and press **Save profile** (or Enter). Saving under an existing name overwrites that profile.
-- **Load**: pick a profile from the list and press **Load**. It replaces the current selection and base. The base is skipped if that branch no longer exists.
-- **Delete**: press **Delete**, then **Confirm delete** within 3 seconds.
-- Next to Save, the panel shows which profile is loaded, and marks it **(modified)** once the selection or base differs from what was saved.
+- **Switch**: click a tab. It replaces the current selection and base. The base is skipped if that branch no longer exists.
+- **Save as…**: saves the current setup under a new name. Saving under an existing name overwrites that profile.
+- **Save**: updates the active profile. A dot on its tab means the selection or base has changed since it was saved.
+- **Delete**: hover a tab, click **×**, then click **Delete?** within 3 seconds.
+- **Delete all**: click **Delete all**, then click it again (it now reads **Delete N?**) within 3 seconds.
 
 Profiles are kept in this browser's localStorage, together with the other settings.
 

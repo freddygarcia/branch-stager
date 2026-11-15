@@ -36,6 +36,7 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
   main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
   h1 { font-size: 20px; margin: 0 0 4px; }
@@ -112,10 +113,63 @@
   .hl.theirs, .hl.m-theirs { background: var(--theirs-bg); }
   .hl.base, .hl.m-base { background: var(--base-bg); }
   .hl.m-ours, .hl.m-base, .hl.m-sep, .hl.m-theirs { color: var(--muted); font-weight: 600; }
+  .topbar {
+    position: sticky; top: 0; z-index: 10; background: var(--panel); border-bottom: 1px solid var(--border);
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  }
+  .topbar-inner { max-width: 1100px; margin: 0 auto; padding: 8px 16px; display: flex; align-items: center; gap: 12px; }
+  .topbar-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); flex: none; }
+  .ptabs { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; padding: 2px 0; }
+  .ptabs .hint { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .ptab {
+    display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 260px;
+    padding: 4px 6px 4px 12px; border-radius: 999px; border: 1px solid transparent;
+    background: transparent; color: var(--text); font-size: 13px; cursor: pointer;
+  }
+  .ptab:hover { background: var(--row-hover); }
+  .ptab.active { background: var(--accent); color: var(--accent-text); }
+  .ptab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ptab .pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .ptab .pcount { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; opacity: .7; }
+  .ptab .pdirty { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none; }
+  .ptab.active .pdirty { background: var(--accent-text); }
+  .ptab .pdel {
+    display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+    font-size: 13px; line-height: 1; opacity: 0; color: inherit;
+  }
+  .ptab:hover .pdel, .ptab:focus-within .pdel, .ptab .pdel.armed { opacity: .75; }
+  .ptab .pdel:hover { opacity: 1; background: rgba(127,127,127,.25); }
+  .ptab .pdel.armed { width: auto; padding: 0 7px; border-radius: 999px; background: var(--err); color: #fff; opacity: 1; font-size: 11px; font-weight: 600; }
+  .pactions .pdanger { color: var(--err); }
+  .pactions .pdanger.armed { background: var(--err); border-color: var(--err); color: #fff; font-weight: 600; }
+  .pactions, .psave { display: flex; gap: 6px; flex: none; align-items: center; }
+  .pactions button, .psave button { padding: 4px 12px; font-size: 13px; }
+  .psave input { width: 180px; padding: 4px 9px; font-size: 13px; }
+  @media (max-width: 640px) {
+    .topbar-inner { flex-wrap: wrap; }
+    .topbar-label { display: none; }
+    .ptabs { flex-basis: 100%; order: 2; }
+  }
   .legend { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin: 0 3px 0 10px; }
 </style>
 </head>
 <body>
+<header class="topbar" id="profileBar" aria-label="Merge profiles">
+  <div class="topbar-inner">
+    <span class="topbar-label">Profiles</span>
+    <nav class="ptabs" id="profileTabs" role="tablist"></nav>
+    <form class="psave" id="profileForm" hidden>
+      <input id="profileName" type="text" placeholder="Profile name" aria-label="New profile name" autocomplete="off">
+      <button type="submit" class="primary">Save</button>
+      <button type="button" id="profileCancel" class="icon" title="Cancel (Esc)">×</button>
+    </form>
+    <div class="pactions" id="profileActions">
+      <button id="profileSave" title="Save the current selection and base into the active profile">Save</button>
+      <button id="profileSaveAs" title="Save the current selection, order and base as a new profile">Save as…</button>
+      <button id="profileDeleteAll" class="pdanger" title="Delete every saved profile">Delete all</button>
+    </div>
+  </div>
+</header>
 <main>
   <h1>Branch Merger</h1>
   <p class="sub">Select branches, press <b>Apply</b>: a new branch is cut from the base branch and the selected branches are merged into it, in order.</p>
@@ -162,16 +216,6 @@
 
     <section class="panel">
       <h2>Selected <span class="muted" style="font-weight:400">(merge order)</span></h2>
-      <div class="row" style="margin-bottom:6px">
-        <select id="profileSel" style="flex:1;min-width:160px" aria-label="Saved profiles"></select>
-        <button id="profileLoad" title="Replace the selection and base with this profile">Load</button>
-        <button id="profileDelete" title="Delete this profile">Delete</button>
-      </div>
-      <div class="row" style="margin-bottom:10px">
-        <input id="profileName" type="text" style="flex:1;min-width:160px" placeholder="Profile name" aria-label="Profile name">
-        <button id="profileSave" title="Save the selected branches, their order and the base branch under this name (overwrites a profile with the same name)">Save profile</button>
-        <span id="profileMsg" class="muted" style="font-size:12.5px"></span>
-      </div>
       <div class="list" id="selectedList"></div>
       <div class="row" style="margin-top:8px">
         <button id="clearSel">Clear</button>
@@ -806,71 +850,96 @@
   const matchesProfile = (p) => p.base === state.base
     && p.branches.length === state.selected.length && p.branches.every((n, i) => n === state.selected[i]);
 
+  const activeProfile = () => state.profiles.find((p) => p.name === state.activeProfile);
+
   function renderProfiles() {
-    const select = $('profileSel');
-    const picked = select.value || state.activeProfile;
-    select.replaceChildren();
-    if (!state.profiles.length) select.append(el('option', { value: '' }, 'No saved profiles'));
-    for (const p of state.profiles) {
-      const label = `${p.name} · ${p.branches.length} branch${p.branches.length === 1 ? '' : 'es'} on ${p.base}`;
-      select.append(el('option', { value: p.name, selected: p.name === picked, title: p.branches.join('\n') }, label));
+    const tabs = $('profileTabs');
+    tabs.replaceChildren();
+    if (!state.profiles.length) {
+      tabs.append(el('span', { class: 'hint' }, 'Select branches, then Save as… to keep this merge as a profile.'));
     }
-    select.disabled = !state.profiles.length;
-    $('profileLoad').disabled = running || !state.profiles.length;
-    $('profileDelete').disabled = running || !state.profiles.length;
-    $('profileSave').disabled = running || !state.selected.length;
-    const active = state.profiles.find((p) => p.name === state.activeProfile);
-    $('profileMsg').textContent = active ? (matchesProfile(active) ? `Loaded: ${active.name}` : `${active.name} (modified)`) : '';
+    for (const p of state.profiles) {
+      const isActive = p.name === state.activeProfile;
+      const dirty = isActive && !matchesProfile(p);
+      const del = el('span', {
+        class: `pdel${deleteArmed === p.name ? ' armed' : ''}`,
+        role: 'button',
+        title: deleteArmed === p.name ? 'Click again to delete' : `Delete ${p.name}`,
+        onclick: (e) => { e.stopPropagation(); deleteProfile(p.name); },
+      }, deleteArmed === p.name ? 'Delete?' : '×');
+      tabs.append(el('button', {
+        class: `ptab${isActive ? ' active' : ''}`,
+        role: 'tab',
+        ariaSelected: String(isActive),
+        disabled: running,
+        title: `${p.base} ← ${p.branches.join(', ')}${dirty ? '\n(unsaved changes)' : ''}`,
+        onclick: () => loadProfile(p.name),
+      },
+        el('span', { class: 'pname' }, p.name),
+        el('span', { class: 'pcount' }, String(p.branches.length)),
+        dirty ? el('span', { class: 'pdirty', title: 'Unsaved changes' }) : null,
+        del,
+      ));
+    }
+    const active = activeProfile();
+    const editing = !$('profileForm').hidden;
+    $('profileActions').hidden = editing;
+    $('profileSave').hidden = !active;
+    $('profileSave').disabled = running || !state.selected.length || matchesProfile(active || { branches: [] });
+    $('profileSaveAs').disabled = running || !state.selected.length;
+    const all = $('profileDeleteAll');
+    all.hidden = !state.profiles.length;
+    all.disabled = running;
+    all.classList.toggle('armed', deleteArmed === ALL);
+    all.textContent = deleteArmed === ALL ? `Delete ${state.profiles.length}?` : 'Delete all';
+    tabs.querySelector('.ptab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
-  function saveProfile() {
-    const name = $('profileName').value.trim();
-    if (!name) { $('profileName').focus(); return; }
-    if (!state.selected.length) return;
+  function storeProfile(name) {
     const entry = { name, base: state.base, branches: [...state.selected], at: Date.now() };
     const i = state.profiles.findIndex((p) => p.name === name);
     if (i >= 0) state.profiles[i] = entry;
     else state.profiles = [...state.profiles, entry].sort((a, b) => a.name.localeCompare(b.name));
     state.activeProfile = name;
     save();
-    renderProfiles();
-    $('profileSel').value = name;
   }
 
-  function loadProfile() {
-    const p = state.profiles.find((x) => x.name === $('profileSel').value);
-    if (!p) return;
+  function openSaveAs() {
+    $('profileForm').hidden = false;
+    $('profileName').value = '';
+    renderProfiles();
+    $('profileName').focus();
+  }
+  function closeSaveAs() {
+    $('profileForm').hidden = true;
+    renderProfiles();
+  }
+
+  function loadProfile(name) {
+    const p = state.profiles.find((x) => x.name === name);
+    if (!p || running) return;
     state.selected = p.branches.filter((n) => n !== p.base);
     if (!branches.length || branches.includes(p.base)) state.base = p.base;
     state.activeProfile = p.name;
-    $('profileName').value = p.name;
     save();
     renderAll();
   }
 
   // a second click within 3 s deletes, so a stray click cannot lose a profile
+  // deleteArmed holds a profile name, or ALL while Delete all waits for its second click
+  const ALL = Symbol('all');
   let deleteArmed = null;
-  function disarmDelete() {
-    deleteArmed = null;
-    $('profileDelete').textContent = 'Delete';
-    $('profileDelete').classList.remove('err');
-  }
-  function deleteProfile() {
-    const name = $('profileSel').value;
-    if (!name) return;
+  function deleteProfile(name) {
     if (deleteArmed !== name) {
       deleteArmed = name;
-      $('profileDelete').textContent = 'Confirm delete';
-      $('profileDelete').classList.add('err');
-      setTimeout(() => { if (deleteArmed === name) disarmDelete(); }, 3000);
+      renderProfiles();
+      setTimeout(() => { if (deleteArmed === name) { deleteArmed = null; renderProfiles(); } }, 3000);
       return;
     }
-    disarmDelete();
-    state.profiles = state.profiles.filter((p) => p.name !== name);
-    if (state.activeProfile === name) state.activeProfile = '';
-    if ($('profileName').value.trim() === name) $('profileName').value = '';
+    deleteArmed = null;
+    state.profiles = name === ALL ? [] : state.profiles.filter((p) => p.name !== name);
+    if (name === ALL || state.activeProfile === name) state.activeProfile = '';
     save();
-    $('profileSel').value = '';
     renderProfiles();
   }
 
@@ -1171,18 +1240,21 @@
   const setConflictsOpen = (open) => { for (const d of $('conflictFiles').querySelectorAll('details')) d.open = open; };
   $('expandConflicts').addEventListener('click', () => setConflictsOpen(true));
   $('collapseConflicts').addEventListener('click', () => setConflictsOpen(false));
-  $('profileSave').addEventListener('click', saveProfile);
-  $('profileName').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveProfile(); });
-  $('profileLoad').addEventListener('click', loadProfile);
-  $('profileDelete').addEventListener('click', deleteProfile);
-  $('profileSel').addEventListener('change', (e) => {
-    disarmDelete();
-    if (e.target.value) $('profileName').value = e.target.value;
+  $('profileSave').addEventListener('click', () => { if (activeProfile()) { storeProfile(state.activeProfile); renderProfiles(); } });
+  $('profileSaveAs').addEventListener('click', openSaveAs);
+  $('profileDeleteAll').addEventListener('click', () => deleteProfile(ALL));
+  $('profileCancel').addEventListener('click', closeSaveAs);
+  $('profileName').addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSaveAs(); });
+  $('profileForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = $('profileName').value.trim();
+    if (!name || !state.selected.length) { $('profileName').focus(); return; }
+    storeProfile(name); // an existing name is overwritten
+    closeSaveAs();
   });
   $('clearHistory').addEventListener('click', () => { state.history = []; save(); renderHistory(); });
 
   $('newName').value = state.prefix + stamp();
-  $('profileName').value = state.activeProfile;
   renderAll();
   (async () => {
     // first visit in local mode: start from the folder given to the helper with --repo
