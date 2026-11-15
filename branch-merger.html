@@ -13,8 +13,8 @@
   fine-grained token limited to this repository with "Contents: Read and write".
   The token is only ever sent to api.github.com.
 
-  Local branches: run `python3 infrastructure/scripts/github/branch-merger-local.py` and
-  open http://127.0.0.1:8765 instead. Settings > Source then offers "Local clone": the
+  Local branches: run `python3 main.py` and open http://127.0.0.1:8765 instead.
+  Settings > Source then offers "Local clone", which takes the repository folder: the
   list shows your local branches and origin's, and Apply merges with git in a temporary
   worktree (your checkout is not touched). The new branch stays local unless "Push to
   origin" (next to Apply, off on every page load) is ticked: then it is pushed once every
@@ -131,15 +131,16 @@
             <option value="github">GitHub (remote branches only)</option>
           </select>
         </div>
-        <div><label for="owner">Owner</label><input id="owner" type="text"></div>
-        <div><label for="repo">Repository</label><input id="repo" type="text"></div>
-        <div><label for="token">GitHub token (stored in this browser)</label><input id="token" type="password" autocomplete="off" placeholder="github_pat_…"></div>
+        <div class="local-only"><label for="localPath">Repository folder</label><input id="localPath" type="text" spellcheck="false" placeholder="/path/to/your/clone"></div>
+        <div class="github-only"><label for="owner">Owner</label><input id="owner" type="text"></div>
+        <div class="github-only"><label for="repo">Repository</label><input id="repo" type="text"></div>
+        <div class="github-only"><label for="token">GitHub token (stored in this browser)</label><input id="token" type="password" autocomplete="off" placeholder="github_pat_…"></div>
         <div><label for="prefix">New branch prefix</label><input id="prefix" type="text"></div>
       </div>
       <div class="row" style="margin-top:12px">
         <label style="margin:0"><input id="deleteOnFail" type="checkbox"> Delete the new branch when a merge conflicts</label>
         <span class="spacer"></span>
-        <button id="forgetToken">Forget token</button>
+        <button id="forgetToken" class="github-only">Forget token</button>
       </div>
     </details>
   </section>
@@ -230,6 +231,7 @@
     token: '',
     prefix: 'integration/',
     source: 'local',
+    localPath: '',
     base: 'master',
     selected: [],
     hideArchived: true,
@@ -264,7 +266,8 @@
   // Served by branch-merger-local.py (not opened as a file): the local clone can be used.
   const HELPER = /^https?:$/.test(location.protocol) && ['127.0.0.1', 'localhost'].includes(location.hostname);
   const isLocal = () => HELPER && state.source === 'local';
-  const ready = () => isLocal() || Boolean(state.token);
+  const ready = () => Boolean(isLocal() ? state.localPath : state.token);
+  const notReadyText = () => (isLocal() ? 'Enter the repository folder in Settings, then Reload.' : 'Add a token in Settings, then Reload.');
   const ARCHIVED = /^(origin\/)?archived\//;
   // branches shown with a checkbox: in local mode, origin/x is hidden when a local x exists
   const listed = () => branches.filter((n) => !meta[n]?.shadowed);
@@ -337,7 +340,12 @@
   async function helper(path, { method = 'GET', body } = {}) {
     const res = await fetch(`/api${path}`, {
       method,
-      headers: { 'X-Branch-Merger': '1', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      headers: {
+        'X-Branch-Merger': '1',
+        // header values must be ASCII: the helper decodes it
+        'X-Branch-Merger-Repo': encodeURIComponent(state.localPath),
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
     let data = null;
@@ -345,7 +353,7 @@
     if (res.status === 404) {
       // The page is read from disk on every request, the helper's routes only at start:
       // an endpoint added since the helper started is missing until it is restarted.
-      data = { error: 'The running helper is older than this page: stop branch-merger-local.py (Ctrl+C) and start it again.' };
+      data = { error: 'The running helper is older than this page: stop main.py (Ctrl+C) and start it again.' };
     }
     return { status: res.status, data };
   }
@@ -477,7 +485,7 @@
     const files = $('conflictFiles');
     files.replaceChildren();
     if (!r.tree) {
-      files.append(el('div', { class: 'err' }, 'The running helper is older than this page: stop branch-merger-local.py (Ctrl+C) and start it again.'));
+      files.append(el('div', { class: 'err' }, 'The running helper is older than this page: stop main.py (Ctrl+C) and start it again.'));
       return;
     }
     const head = conflictHead;
@@ -633,6 +641,9 @@
   // ---------------------------------------------------------------- rendering
 
   function renderSettings() {
+    $('localPath').value = state.localPath;
+    for (const node of document.querySelectorAll('.local-only')) node.hidden = !isLocal();
+    for (const node of document.querySelectorAll('.github-only')) node.hidden = isLocal();
     $('owner').value = state.owner;
     $('repo').value = state.repo;
     $('token').value = state.token;
@@ -642,7 +653,7 @@
     $('sourceBox').hidden = !HELPER;
     $('source').value = state.source;
     $('settingsSummary').textContent = isLocal()
-      ? '— local clone'
+      ? `— local clone${state.localPath ? ` · ${state.localPath}` : ' · no folder'}`
       : `— ${state.owner}/${state.repo}${state.token ? '' : ' · no token'}`;
     if (!ready()) $('settingsBox').open = true;
   }
@@ -651,7 +662,7 @@
     const list = $('branchList');
     list.replaceChildren();
     if (!branches.length) {
-      list.append(el('div', { class: 'empty' }, ready() ? 'No branches loaded. Press Reload.' : 'Add a token in Settings, then Reload.'));
+      list.append(el('div', { class: 'empty' }, ready() ? 'No branches loaded. Press Reload.' : notReadyText()));
       $('branchCount').textContent = '';
       return;
     }
@@ -870,7 +881,7 @@
   async function reload() {
     if (!ready()) {
       $('settingsBox').open = true;
-      $('token').focus();
+      $(isLocal() ? 'localPath' : 'token').focus();
       return;
     }
     $('reload').disabled = true;
@@ -1030,15 +1041,16 @@
 
   // ---------------------------------------------------------------- wiring
 
-  for (const id of ['owner', 'repo', 'token', 'prefix']) {
+  for (const id of ['localPath', 'owner', 'repo', 'token', 'prefix']) {
     $(id).addEventListener('change', (e) => {
-      const changedRepo = (id === 'owner' || id === 'repo') && state[id] !== e.target.value.trim();
+      const changedRepo = ['localPath', 'owner', 'repo'].includes(id) && state[id] !== e.target.value.trim();
       state[id] = e.target.value.trim();
       if (id === 'prefix') $('newName').value = state.prefix + stamp();
       if (changedRepo) { branches = []; state.base = ''; }
       save();
       renderAll();
-      if ((id === 'token' && state.token) || changedRepo) reload();
+      if (changedRepo) { shas = {}; meta = {}; }
+      if (((id === 'token' && state.token) || changedRepo) && ready()) reload();
     });
   }
   $('source').addEventListener('change', (e) => {
@@ -1077,7 +1089,16 @@
 
   $('newName').value = state.prefix + stamp();
   renderAll();
-  if (ready()) reload();
+  (async () => {
+    // first visit in local mode: start from the folder given to the helper with --repo
+    if (HELPER && !state.localPath) {
+      try {
+        const { status, data } = await helper('/info');
+        if (status === 200 && data?.repo) { state.localPath = data.repo; save(); renderAll(); }
+      } catch { /* the folder can be entered by hand */ }
+    }
+    if (ready()) reload();
+  })();
 })();
 </script>
 </body>

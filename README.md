@@ -18,12 +18,12 @@ Before you apply, a dry run checks each selected branch. It shows which ones mer
 Use this mode to see and merge local branches as well as `origin`'s.
 
 ```sh
-python3 main.py --repo /path/to/your/clone [--port 8765]
+python3 main.py [--port 8765] [--repo /path/to/your/clone]
 ```
 
-Then open <http://127.0.0.1:8765> and choose **Settings › Source › Local clone**.
+Then open <http://127.0.0.1:8765>, choose **Settings › Source › Local clone** and enter the clone's folder in **Repository folder** (an absolute path; `~` works, and any folder inside the clone is fine).
 
-- Pass `--repo` unless `main.py` sits inside the clone. It defaults to the script's own directory.
+- The folder is saved in the browser, and you can switch to another clone at any time without restarting the server. `--repo` only pre-fills the field on first use.
 - Apply merges in a temporary git worktree, so your working copy, current branch and uncommitted changes are never touched.
 - If a merge conflicts, it is aborted and reported. By default the new branch is then deleted (see the **Settings** checkbox).
 - The new branch stays local unless you tick **Push to origin** next to Apply. It is only pushed if every merge succeeded, and the box is unticked on every page load.

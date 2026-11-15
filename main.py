@@ -3,9 +3,11 @@
 Local helper for Branch Merger: serves branch-merger.html and lets it list and merge the
 branches of your local clone with git, local branches included.
 
-    python3 infrastructure/scripts/github/branch-merger-local.py [--port 8765] [--repo PATH]
+    python3 main.py [--port 8765] [--repo PATH]
 
-then open http://127.0.0.1:8765 (opened as a file, the page only talks to GitHub).
+then open http://127.0.0.1:8765 (opened as a file, the page only talks to GitHub) and enter
+the folder of your clone in Settings. Every API request names the repository folder in the
+X-Branch-Merger-Repo header; --repo only pre-fills that field.
 
 Apply cuts the new branch from the base and merges every selected branch into it, in order,
 inside a temporary git worktree: your working copy, current branch and uncommitted changes
@@ -31,7 +33,7 @@ import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 HERE = Path(__file__).resolve().parent
 PAGE = HERE / "branch-merger.html"
@@ -40,6 +42,8 @@ REMOTE = "origin"
 PROTECTED = re.compile(r"^(master|main|staging|development|release/.*|hotfix/.*)$")
 SHA = re.compile(r"^[0-9a-f]{7,40}$")
 API_HEADER = "X-Branch-Merger"
+# the repository folder of an API request, URI-encoded (a header value must be ASCII)
+REPO_HEADER = "X-Branch-Merger-Repo"
 GIT_TIMEOUT = 300
 # conflict view: lines shown around each conflict, and at most this many lines per file
 CONFLICT_CONTEXT = 3
@@ -57,6 +61,29 @@ WRITE_LOCK = threading.Lock()
 
 class GitError(Exception):
     pass
+
+
+def repo_top(path: str) -> Path:
+    """Top folder of the git repository that contains `path` (`~` expanded)."""
+    folder = Path(path).expanduser()
+    if not folder.is_absolute():
+        msg = f"Enter an absolute path: {path}"
+        raise GitError(msg)
+    if not folder.is_dir():
+        msg = f"No such folder: {folder}"
+        raise GitError(msg)
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],  # noqa: S607
+        cwd=folder,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=GIT_TIMEOUT,
+    )
+    if result.returncode != 0:
+        msg = f"Not a git repository: {folder}"
+        raise GitError(msg)
+    return Path(result.stdout.strip())
 
 
 def conflict_kinds(lines: list[str]) -> list[str]:
@@ -465,8 +492,17 @@ class MergeRun:
 
 
 class Handler(BaseHTTPRequestHandler):
-    repo: Repo
+    default_repo: Path | None
     port: int
+
+    @property
+    def repo(self) -> Repo:
+        """The repository named by the request's REPO_HEADER."""
+        path = unquote(self.headers.get(REPO_HEADER, "")).strip()
+        if not path:
+            msg = "Enter the repository folder in Settings."
+            raise GitError(msg)
+        return Repo(repo_top(path))
 
     def log_message(self, fmt: str, *args) -> None:  # quieter than the default
         sys.stderr.write(
@@ -515,11 +551,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             if url.path == "/api/info":
-                self._json(
-                    HTTPStatus.OK, {"repo": str(self.repo.path), "remote": REMOTE}
-                )
+                default = str(self.default_repo) if self.default_repo else None
+                self._json(HTTPStatus.OK, {"repo": default, "remote": REMOTE})
             elif url.path == "/api/branches":
-                self._json(HTTPStatus.OK, {"branches": self.repo.branches()})
+                repo = self.repo
+                self._json(
+                    HTTPStatus.OK, {"repo": str(repo.path), "branches": repo.branches()}
+                )
             elif url.path == "/api/compare":
                 query = parse_qs(url.query)
                 base, head = query.get("base", [""])[0], query.get("head", [""])[0]
@@ -618,26 +656,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument(
-        "--repo", type=Path, default=HERE, help="any path inside the repository"
+        "--repo",
+        help="repository folder to pre-fill in Settings (the page can name any other)",
     )
     args = parser.parse_args()
 
-    try:
-        top = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],  # noqa: S607
-            cwd=args.repo,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        sys.exit(f"Not a git repository: {args.repo}")
+    default = None
+    if args.repo:
+        try:
+            default = repo_top(str(Path(args.repo).resolve()))
+        except GitError as e:
+            sys.exit(str(e))
 
-    Handler.repo = Repo(Path(top))
+    Handler.default_repo = default
     Handler.port = args.port
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     print(
-        f"Branch Merger (local) for {top}\nOpen http://127.0.0.1:{args.port}  (Ctrl+C to stop)"
+        f"Branch Merger (local)\nOpen http://127.0.0.1:{args.port}  (Ctrl+C to stop)"
     )
     with contextlib.suppress(KeyboardInterrupt):
         server.serve_forever()
