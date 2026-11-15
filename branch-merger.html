@@ -161,6 +161,22 @@
   .jira-who { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
   .tag.prog { color: var(--accent); border-color: var(--accent); }
   @media (max-width: 640px) { .jira-who { display: none; } }
+  fieldset.field { border: 0; padding: 0; margin-left: 0; margin-right: 0; min-width: 0; }
+  fieldset.field legend { padding: 0; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .seg { display: flex; padding: 3px; gap: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+  .seg label { flex: 1; margin: 0; font-size: 13.5px; color: var(--muted); cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg span {
+    display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px 10px;
+    border-radius: 6px; white-space: nowrap; transition: background .12s, color .12s;
+  }
+  .seg label:hover span { color: var(--text); }
+  .seg input:checked + span { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(0,0,0,.08); }
+  .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .seg code { font-weight: 400; background: none; padding: 0; color: var(--muted); }
+  fieldset:disabled .seg label { cursor: not-allowed; opacity: .6; }
+  fieldset.field .hint { font-size: 12.5px; color: var(--muted); margin-top: 5px; }
+  @media (max-width: 420px) { .seg { flex-direction: column; } }
   .legend { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin: 0 3px 0 10px; }
 </style>
 </head>
@@ -300,6 +316,14 @@
           <button id="renew" class="icon" title="New timestamped name">↻</button>
         </div>
       </div>
+      <fieldset id="mergeMode" class="field" style="margin-top:10px">
+        <legend>Merge strategy</legend>
+        <div class="seg" role="radiogroup" aria-describedby="mergeHint">
+          <label><input type="radio" name="mergeMode" value="no-ff" checked><span>Merge commit <code>--no-ff</code></span></label>
+          <label><input type="radio" name="mergeMode" value="ff"><span>Fast-forward <code>--ff</code></span></label>
+        </div>
+        <div id="mergeHint" class="hint"></div>
+      </fieldset>
       <div class="row" style="margin-top:14px">
         <span class="spacer"></span>
         <label id="pushBox" hidden style="margin:0;font-size:14px;color:var(--text);white-space:nowrap" title="After all merges succeed, push the new branch to origin (git push --set-upstream). Off by default on every page load.">
@@ -939,6 +963,7 @@
     renderConflicts();
     $('pushBox').hidden = !isLocal();
     $('pushNew').disabled = running;
+    $('mergeMode').disabled = running;
     $('apply').textContent = isLocal() && $('pushNew').checked ? 'Apply & push' : 'Apply';
     renderProfiles(); // the "(modified)" note follows the selection and base
     renderJira(); // the issues' branch buttons follow the selection and the branch list
@@ -1343,10 +1368,19 @@
     line.scrollIntoView({ block: 'nearest' });
   }
 
+  // Merge strategy: a page-load choice like "Push to origin", always --no-ff on load
+  const mergeFf = () => document.querySelector('input[name="mergeMode"]:checked')?.value === 'ff';
+  function renderMergeHint() {
+    $('mergeHint').textContent = mergeFf()
+      ? 'A branch that is ahead of the new branch moves it forward with no merge commit. Branches that have diverged still get a merge commit.'
+      : 'Every branch gets its own merge commit, so the history shows what was merged and when.';
+  }
+
   async function apply() {
     const name = $('newName').value.trim();
     const base = state.base;
     const selected = [...state.selected];
+    const ff = mergeFf();
 
     if (!name) return alertInline('Enter a name for the new branch.');
     if (PROTECTED.test(name)) return alertInline(`"${name}" is a protected branch name. Pick another one.`);
@@ -1374,7 +1408,7 @@
         const push = $('pushNew').checked;
         const { status, data } = await helper('/apply', {
           method: 'POST',
-          body: { name, base, branches: selected, deleteOnFail: state.deleteOnFail, push },
+          body: { name, base, branches: selected, deleteOnFail: state.deleteOnFail, push, ff },
         });
         if (status !== 200) throw new Error(data?.error || `Apply failed (${status})`);
         for (const line of data.log) log(line.text, line.cls);
@@ -1396,6 +1430,7 @@
       if (baseRef.status !== 200) throw new Error(`Could not read ${base} (${baseRef.status}): ${baseRef.data?.message || ''}`);
       const sha = baseRef.data.object.sha;
       log(`  at ${sha.slice(0, 8)}`, 'muted');
+      log(ff ? 'Merge mode: --ff (fast-forward when possible)' : 'Merge mode: --no-ff (always a merge commit)', 'muted');
 
       const created = await gh('/git/refs', { method: 'POST', body: { ref: `refs/heads/${name}`, sha } });
       if (created.status !== 201) throw new Error(`Could not create ${name} (${created.status}): ${created.data?.message || ''}`);
@@ -1403,8 +1438,14 @@
       branches = [...branches, name].sort((a, b) => a.localeCompare(b));
 
       let merged = 0;
+      let fastForwarded = 0;
       let upToDate = 0;
       for (const [i, head] of selected.entries()) {
+        if (ff && await fastForward(name, head)) {
+          merged++;
+          fastForwarded++;
+          continue;
+        }
         const res = await gh('/merges', {
           method: 'POST',
           body: { base: name, head, commit_message: `Merge branch '${head}' into ${name}` },
@@ -1434,15 +1475,31 @@
         }
       }
 
-      log(`Done: ${merged} merged, ${upToDate} already contained.`, 'ok');
+      const ffNote = fastForwarded ? ` (${fastForwarded} fast-forwarded)` : '';
+      log(`Done: ${merged} merged${ffNote}, ${upToDate} already contained.`, 'ok');
       addLinks(name, base);
-      finish(true, `${merged} merged${upToDate ? `, ${upToDate} up to date` : ''}`);
+      finish(true, `${merged} merged${ffNote}${upToDate ? `, ${upToDate} up to date` : ''}`);
       $('newName').value = state.prefix + stamp();
       renderBranches();
     } catch (e) {
       log(e.message, 'err');
       finish(false, e.message);
     }
+  }
+
+  // GitHub's merge API always makes a merge commit. For --ff, move `name` to `head` when
+  // `head` is strictly ahead of it; true if done. Otherwise false, and the caller merges.
+  async function fastForward(name, head) {
+    const cmp = await gh(`/compare/${refPath(name)}...${refPath(head)}`);
+    if (cmp.status !== 200 || cmp.data?.status !== 'ahead') return false;
+    const headRef = await gh(`/git/ref/heads/${refPath(head)}`);
+    if (headRef.status !== 200) return false;
+    const sha = headRef.data.object.sha;
+    // force: false, so GitHub refuses the update unless it is a fast-forward
+    const moved = await gh(`/git/refs/heads/${refPath(name)}`, { method: 'PATCH', body: { sha, force: false } });
+    if (moved.status !== 200) return false;
+    log(`  ✓ ${head}  → ${sha.slice(0, 8)}  (fast-forward)`, 'ok');
+    return true;
   }
 
   function addLinks(name, base) {
@@ -1500,6 +1557,9 @@
   $('deleteOnFail').addEventListener('change', (e) => { state.deleteOnFail = e.target.checked; save(); });
   // not saved: pushing must be chosen again after every page load
   $('pushNew').addEventListener('change', renderSelected);
+  $('mergeMode').addEventListener('change', renderMergeHint);
+  document.querySelector('input[name="mergeMode"][value="no-ff"]').checked = true; // no form restore
+  renderMergeHint();
   $('hideArchived').addEventListener('change', (e) => { state.hideArchived = e.target.checked; save(); renderBranches(); });
   $('filter').addEventListener('input', renderBranches);
   $('base').addEventListener('change', (e) => {
