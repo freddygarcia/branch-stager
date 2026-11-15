@@ -162,6 +162,16 @@
 
     <section class="panel">
       <h2>Selected <span class="muted" style="font-weight:400">(merge order)</span></h2>
+      <div class="row" style="margin-bottom:6px">
+        <select id="profileSel" style="flex:1;min-width:160px" aria-label="Saved profiles"></select>
+        <button id="profileLoad" title="Replace the selection and base with this profile">Load</button>
+        <button id="profileDelete" title="Delete this profile">Delete</button>
+      </div>
+      <div class="row" style="margin-bottom:10px">
+        <input id="profileName" type="text" style="flex:1;min-width:160px" placeholder="Profile name" aria-label="Profile name">
+        <button id="profileSave" title="Save the selected branches, their order and the base branch under this name (overwrites a profile with the same name)">Save profile</button>
+        <span id="profileMsg" class="muted" style="font-size:12.5px"></span>
+      </div>
       <div class="list" id="selectedList"></div>
       <div class="row" style="margin-top:8px">
         <button id="clearSel">Clear</button>
@@ -237,6 +247,9 @@
     hideArchived: true,
     deleteOnFail: true,
     history: [],
+    // saved merges, switched between with Load: [{ name, base, branches, at }]
+    profiles: [],
+    activeProfile: '',
   };
   // branches that must never be the new branch
   const PROTECTED = /^(master|main|staging|development|release\/.*|hotfix\/.*)$/;
@@ -742,6 +755,7 @@
     $('pushBox').hidden = !isLocal();
     $('pushNew').disabled = running;
     $('apply').textContent = isLocal() && $('pushNew').checked ? 'Apply & push' : 'Apply';
+    renderProfiles(); // the "(modified)" note follows the selection and base
   }
 
   function renderBase() {
@@ -786,6 +800,78 @@
       ));
     }
     box.append(table);
+  }
+
+  /** True when the selection and base are exactly what the profile saved. */
+  const matchesProfile = (p) => p.base === state.base
+    && p.branches.length === state.selected.length && p.branches.every((n, i) => n === state.selected[i]);
+
+  function renderProfiles() {
+    const select = $('profileSel');
+    const picked = select.value || state.activeProfile;
+    select.replaceChildren();
+    if (!state.profiles.length) select.append(el('option', { value: '' }, 'No saved profiles'));
+    for (const p of state.profiles) {
+      const label = `${p.name} · ${p.branches.length} branch${p.branches.length === 1 ? '' : 'es'} on ${p.base}`;
+      select.append(el('option', { value: p.name, selected: p.name === picked, title: p.branches.join('\n') }, label));
+    }
+    select.disabled = !state.profiles.length;
+    $('profileLoad').disabled = running || !state.profiles.length;
+    $('profileDelete').disabled = running || !state.profiles.length;
+    $('profileSave').disabled = running || !state.selected.length;
+    const active = state.profiles.find((p) => p.name === state.activeProfile);
+    $('profileMsg').textContent = active ? (matchesProfile(active) ? `Loaded: ${active.name}` : `${active.name} (modified)`) : '';
+  }
+
+  function saveProfile() {
+    const name = $('profileName').value.trim();
+    if (!name) { $('profileName').focus(); return; }
+    if (!state.selected.length) return;
+    const entry = { name, base: state.base, branches: [...state.selected], at: Date.now() };
+    const i = state.profiles.findIndex((p) => p.name === name);
+    if (i >= 0) state.profiles[i] = entry;
+    else state.profiles = [...state.profiles, entry].sort((a, b) => a.name.localeCompare(b.name));
+    state.activeProfile = name;
+    save();
+    renderProfiles();
+    $('profileSel').value = name;
+  }
+
+  function loadProfile() {
+    const p = state.profiles.find((x) => x.name === $('profileSel').value);
+    if (!p) return;
+    state.selected = p.branches.filter((n) => n !== p.base);
+    if (!branches.length || branches.includes(p.base)) state.base = p.base;
+    state.activeProfile = p.name;
+    $('profileName').value = p.name;
+    save();
+    renderAll();
+  }
+
+  // a second click within 3 s deletes, so a stray click cannot lose a profile
+  let deleteArmed = null;
+  function disarmDelete() {
+    deleteArmed = null;
+    $('profileDelete').textContent = 'Delete';
+    $('profileDelete').classList.remove('err');
+  }
+  function deleteProfile() {
+    const name = $('profileSel').value;
+    if (!name) return;
+    if (deleteArmed !== name) {
+      deleteArmed = name;
+      $('profileDelete').textContent = 'Confirm delete';
+      $('profileDelete').classList.add('err');
+      setTimeout(() => { if (deleteArmed === name) disarmDelete(); }, 3000);
+      return;
+    }
+    disarmDelete();
+    state.profiles = state.profiles.filter((p) => p.name !== name);
+    if (state.activeProfile === name) state.activeProfile = '';
+    if ($('profileName').value.trim() === name) $('profileName').value = '';
+    save();
+    $('profileSel').value = '';
+    renderProfiles();
   }
 
   function renderAll() {
@@ -1085,9 +1171,18 @@
   const setConflictsOpen = (open) => { for (const d of $('conflictFiles').querySelectorAll('details')) d.open = open; };
   $('expandConflicts').addEventListener('click', () => setConflictsOpen(true));
   $('collapseConflicts').addEventListener('click', () => setConflictsOpen(false));
+  $('profileSave').addEventListener('click', saveProfile);
+  $('profileName').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveProfile(); });
+  $('profileLoad').addEventListener('click', loadProfile);
+  $('profileDelete').addEventListener('click', deleteProfile);
+  $('profileSel').addEventListener('change', (e) => {
+    disarmDelete();
+    if (e.target.value) $('profileName').value = e.target.value;
+  });
   $('clearHistory').addEventListener('click', () => { state.history = []; save(); renderHistory(); });
 
   $('newName').value = state.prefix + stamp();
+  $('profileName').value = state.activeProfile;
   renderAll();
   (async () => {
     // first visit in local mode: start from the folder given to the helper with --repo
