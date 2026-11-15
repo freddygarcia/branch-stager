@@ -11,8 +11,9 @@ X-Branch-Merger-Repo header; --repo only pre-fills that field.
 
 Apply cuts the new branch from the base and merges every selected branch into it, in order,
 inside a temporary git worktree: your working copy, current branch and uncommitted changes
-are never touched, and a conflict is aborted and reported instead of left behind. The new
-branch is only created locally; push it yourself.
+are never touched, and a conflict is aborted and reported instead of left behind. Merges
+are --no-ff unless the request asks for ff (fast-forward when possible). The new branch is
+only created locally unless the request asks to push it.
 
 Only listens on 127.0.0.1. API requests must carry the X-Branch-Merger header and come
 from this server's own origin, so other web pages open in the browser cannot call it.
@@ -483,18 +484,32 @@ class Repo:
         return True, f"Pushed {name} to {REMOTE}"
 
     def merge_into_new_branch(
-        self, name: str, base: str, heads: list[str], *, delete_on_fail: bool
+        self,
+        name: str,
+        base: str,
+        heads: list[str],
+        *,
+        delete_on_fail: bool,
+        ff: bool = False,
     ) -> dict:
         """
         Cut `name` from `base` and merge `heads` into it in order, in a temporary worktree.
+        With `ff`, a branch that is ahead of the new branch is fast-forwarded instead of
+        getting a merge commit (git merge --ff); otherwise every merge is --no-ff.
         Returns {ok, result, log, created}; a conflict aborts that merge and stops there.
         """
         self.check_new_branch_name(name)
         base_sha = self.resolve(base)
         head_shas = [(head, self.resolve(head)) for head in heads]
-        run = MergeRun(self, name, base)
+        run = MergeRun(self, name, base, ff=ff)
         run.say(f"Base {base}")
         run.say(f"  at {base_sha[:8]}", "muted")
+        run.say(
+            "Merge mode: --ff (fast-forward when possible)"
+            if ff
+            else "Merge mode: --no-ff (always a merge commit)",
+            "muted",
+        )
 
         worktree = Path(tempfile.mkdtemp(prefix="branch-merger-"))
         created = False
@@ -533,12 +548,14 @@ class Repo:
 class MergeRun:
     """The log and counters of one apply."""
 
-    def __init__(self, repo: Repo, name: str, base: str):
+    def __init__(self, repo: Repo, name: str, base: str, *, ff: bool = False):
         self.repo = repo
         self.name = name
+        self.ff = ff
         self.merged_heads = [base]
         self.log: list[dict] = []
         self.merged = 0
+        self.fast_forwarded = 0
         self.up_to_date = 0
         self.conflicted = False
 
@@ -557,11 +574,18 @@ class MergeRun:
             self.up_to_date += 1
             self.say(f"  = {head}  already contained, nothing to merge", "muted")
             return True
+        fast_forward = (
+            self.ff
+            and repo.run(
+                "merge-base", "--is-ancestor", "HEAD", sha, cwd=worktree, check=False
+            ).returncode
+            == 0
+        )
         # --no-verify: like the GitHub API merge, no local hooks run on the merge commit
         message = f"Merge branch '{head}' into {self.name}"
         result = repo.run(
             "merge",
-            "--no-ff",
+            "--ff" if self.ff else "--no-ff",
             "--no-verify",
             "-m",
             message,
@@ -571,9 +595,11 @@ class MergeRun:
         )
         if result.returncode == 0:
             self.merged += 1
+            self.fast_forwarded += fast_forward
             self.merged_heads.append(head)
             short = repo.out("rev-parse", "--short=8", "HEAD", cwd=worktree)
-            self.say(f"  ✓ {head}  → {short}", "ok")
+            how = "  (fast-forward)" if fast_forward else ""
+            self.say(f"  ✓ {head}  → {short}{how}", "ok")
             return True
 
         files = repo.out(
@@ -594,10 +620,14 @@ class MergeRun:
         return False
 
     def done(self) -> dict:
-        self.say(
-            f"Done: {self.merged} merged, {self.up_to_date} already contained.", "ok"
+        ff_note = (
+            f" ({self.fast_forwarded} fast-forwarded)" if self.fast_forwarded else ""
         )
-        result = f"{self.merged} merged" + (
+        self.say(
+            f"Done: {self.merged} merged{ff_note}, {self.up_to_date} already contained.",
+            "ok",
+        )
+        result = f"{self.merged} merged{ff_note}" + (
             f", {self.up_to_date} up to date" if self.up_to_date else ""
         )
         return {"ok": True, "result": result, "log": self.log, "created": True}
@@ -766,6 +796,7 @@ class Handler(BaseHTTPRequestHandler):
                         str(body.get("base", "")),
                         heads,
                         delete_on_fail=bool(body.get("deleteOnFail", True)),
+                        ff=body.get("ff") is True,
                     )
                     # Only a branch whose merges all succeeded is pushed, and only on request.
                     result["pushed"] = False

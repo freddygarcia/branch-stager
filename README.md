@@ -68,7 +68,8 @@ Use a fine-grained token scoped to that one repository with **Contents: Read and
 
 - The new branch can't be a protected name: `master`, `main`, `staging`, `development`, `release/*` or `hotfix/*`. It also can't be a branch that already exists.
 - The local server only listens on `127.0.0.1`. API calls must carry an `X-Branch-Merger` header and come from the server's own origin, so other pages open in your browser can't call it.
-- Merges are `--no-ff` with `--no-verify`, so local git hooks don't run on the merge commits. This matches merges made through the GitHub API.
+- Merges are `--no-ff` by default: every merged branch gets a merge commit. Choose **Merge strategy › Fast-forward** (under the new branch name) to fast-forward instead whenever a branch is ahead of the new branch (the others still get a merge commit). The choice goes back to `--no-ff` on every page load.
+- Merges run with `--no-verify`, so local git hooks don't run on the merge commits. This matches merges made through the GitHub API.
 - Settings, the current selection and the history of applies are saved in the browser's `localStorage`.
 
 ## Backup and moving to another browser
