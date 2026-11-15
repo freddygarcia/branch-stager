@@ -54,6 +54,13 @@ Use a fine-grained token scoped to that one repository with **Contents: Read and
 - Merges are `--no-ff` with `--no-verify`, so local git hooks don't run on the merge commits. This matches merges made through the GitHub API.
 - Settings, the current selection and the history of applies are saved in the browser's `localStorage`.
 
+## Backup and moving to another browser
+
+`localStorage` belongs to one browser and one origin, so `file://`, `http://127.0.0.1:8765` and every other port each keep their own data. To carry it over, open **Settings > Backup**:
+
+- **Export to clipboard** copies everything this page stores (settings, profiles, selection, history and the ahead/behind cache) as JSON. The GitHub token is left out unless **Include GitHub token** is ticked. If the browser blocks the clipboard, the JSON is shown to copy by hand.
+- **Import…** opens a box to paste that JSON into. Importing replaces everything stored in this browser, then reloads the page. When the backup has no token, the token already in this browser is kept. Text that isn't a backup is rejected and nothing changes.
+
 ## Requirements
 
 - Python 3.9+ and `git` 2.38+ (the dry run uses `git merge-tree --write-tree`).

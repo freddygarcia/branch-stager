@@ -11,7 +11,9 @@
   Open this file directly in the browser (file://). Settings, the selection and the
   history of applies are kept in this browser's localStorage, token included: use a
   fine-grained token limited to this repository with "Contents: Read and write".
-  The token is only ever sent to api.github.com.
+  The token is only ever sent to api.github.com. Settings > Backup copies all of it to the
+  clipboard as JSON (token only on request) and imports it back from a paste, e.g. into
+  another browser or port.
 
   Local branches: run `python3 main.py` and open http://127.0.0.1:8765 instead.
   Settings > Source then offers "Local clone", which takes the repository folder: the
@@ -196,6 +198,24 @@
         <span class="spacer"></span>
         <button id="forgetToken" class="github-only">Forget token</button>
       </div>
+      <div class="row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <b style="font-size:13px">Backup</b>
+        <span class="muted" style="font-size:12.5px">Settings, profiles, selection and history, copied as JSON.</span>
+        <span class="spacer"></span>
+        <label style="margin:0;white-space:nowrap" title="The token is a secret: leave this off unless the copy stays with you"><input id="exportToken" type="checkbox"> Include GitHub token</label>
+        <button id="exportData" title="Copy everything stored in this browser to the clipboard">Export to clipboard</button>
+        <button id="importData" title="Paste a backup: it replaces everything stored in this browser">Import…</button>
+      </div>
+      <div id="backupStatus" style="font-size:12.5px;margin-top:6px" hidden></div>
+      <form id="importForm" style="margin-top:8px" hidden>
+        <label for="importText">Paste a backup copied with Export to clipboard. It replaces everything stored in this browser.</label>
+        <textarea id="importText" rows="6" spellcheck="false" style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace"></textarea>
+        <div class="row" style="margin-top:6px">
+          <span class="spacer"></span>
+          <button type="button" id="importCancel">Cancel</button>
+          <button type="submit" class="primary">Import</button>
+        </div>
+      </form>
     </details>
   </section>
 
@@ -346,6 +366,59 @@
     }
     try { localStorage.setItem(COMPARE_KEY, JSON.stringify(compares)); } catch { /* cache only */ }
   }
+
+  // ---------------------------------------------------------------- export / import
+
+  // Every localStorage key of this page starts with this prefix: the backup takes them all,
+  // so keys added later are exported without touching this code.
+  const PREFIX = 'branchMerger.';
+  const BACKUP_FORMAT = 'branch-merger-backup';
+
+  function ownKeys() {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith(PREFIX)) keys.push(k);
+    }
+    return keys.sort();
+  }
+
+  /** The backup as JSON text, and the main state it holds. */
+  function exportData(includeToken) {
+    save();
+    saveCompares();
+    const data = {};
+    for (const k of ownKeys()) {
+      try { data[k] = JSON.parse(localStorage.getItem(k)); } catch { data[k] = localStorage.getItem(k); }
+    }
+    if (!includeToken && data[KEY]) data[KEY] = { ...data[KEY], token: '' };
+    const backup = { format: BACKUP_FORMAT, version: 1, exportedAt: new Date().toISOString(), data };
+    return { text: JSON.stringify(backup, null, 2), stored: data[KEY] || {} };
+  }
+
+  /** Replace this page's stored data with a backup's. Throws when the file is not a backup. */
+  function importData(text) {
+    let file;
+    try { file = JSON.parse(text); } catch { throw new Error('This is not JSON.'); }
+    if (file?.format !== BACKUP_FORMAT || !file.data || typeof file.data !== 'object') {
+      throw new Error('This is not a Branch Merger backup (copied with Export to clipboard).');
+    }
+    const entries = Object.entries(file.data).filter(([k]) => k.startsWith(PREFIX));
+    if (!entries.length) throw new Error('The backup holds no data.');
+    const incoming = Object.fromEntries(entries);
+    // a backup made without the token keeps the token already in this browser
+    if (incoming[KEY] && !incoming[KEY].token && state.token) incoming[KEY] = { ...incoming[KEY], token: state.token };
+    for (const k of ownKeys()) localStorage.removeItem(k);
+    for (const [k, v] of Object.entries(incoming)) {
+      localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+    }
+    return incoming[KEY] || {};
+  }
+
+  const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const describe = (s) => `${count(s.profiles?.length || 0, 'profile', 'profiles')}, ${count(s.history?.length || 0, 'history entry', 'history entries')}`;
+  // shown once after the reload that follows an import
+  const IMPORTED_NOTE = 'branchMerger:imported';
 
   // ---------------------------------------------------------------- dom helpers
 
@@ -1253,6 +1326,68 @@
     closeSaveAs();
   });
   $('clearHistory').addEventListener('click', () => { state.history = []; save(); renderHistory(); });
+
+  const backupStatus = (text, cls) => {
+    const box = $('backupStatus');
+    box.hidden = false;
+    box.className = cls;
+    box.textContent = text;
+  };
+  $('exportData').addEventListener('click', async () => {
+    const withToken = $('exportToken').checked;
+    let backup;
+    try {
+      backup = exportData(withToken);
+    } catch (e) {
+      backupStatus(`Export failed: ${e.message}`, 'err');
+      return;
+    }
+    const { text, stored } = backup;
+    const tokenNote = withToken && stored.token ? ', token included: keep it private' : ', without the token';
+    try {
+      await navigator.clipboard.writeText(text);
+      backupStatus(`Copied ${describe(stored)} to the clipboard${tokenNote}.`, withToken && stored.token ? 'warn' : 'ok');
+    } catch {
+      // clipboard blocked (permissions, insecure origin): show the text to copy by hand
+      $('importForm').hidden = true;
+      backupStatus(`The browser blocked the clipboard. Copy the text below by hand (${describe(stored)}${tokenNote}).`, 'warn');
+      const box = el('textarea', { rows: 6, readOnly: true, spellcheck: false, value: text, style: 'width:100%;margin-top:6px;font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 9px' });
+      $('backupStatus').append(box);
+      box.select();
+    }
+  });
+  const closeImport = () => { $('importForm').hidden = true; $('importText').value = ''; };
+  $('importData').addEventListener('click', () => {
+    if (running) return;
+    $('backupStatus').hidden = true;
+    $('importForm').hidden = false;
+    $('importText').focus();
+  });
+  $('importCancel').addEventListener('click', closeImport);
+  $('importText').addEventListener('keydown', (e) => { if (e.key === 'Escape') closeImport(); });
+  $('importForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = $('importText').value.trim();
+    if (!text) { $('importText').focus(); return; }
+    let s;
+    try {
+      s = importData(text);
+    } catch (err) {
+      backupStatus(`Import failed: ${err.message} Nothing was changed.`, 'err');
+      return;
+    }
+    try { sessionStorage.setItem(IMPORTED_NOTE, `Imported ${describe(s)}.`); } catch { /* note only */ }
+    // start over from the imported data, exactly as on a fresh page load
+    location.reload();
+  });
+  try {
+    const note = sessionStorage.getItem(IMPORTED_NOTE);
+    if (note) {
+      sessionStorage.removeItem(IMPORTED_NOTE);
+      $('settingsBox').open = true;
+      backupStatus(note, 'ok');
+    }
+  } catch { /* note only */ }
 
   $('newName').value = state.prefix + stamp();
   renderAll();
