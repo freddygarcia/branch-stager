@@ -4,12 +4,13 @@ import os
 import tempfile
 import threading
 import unittest
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 from urllib.parse import quote
 
-from main import Handler, JiraError, jira_site, load_dotenv
+from stager.config import PROTECTED, load_dotenv
+from stager.jira import Jira, JiraError, jira_site
+from stager.server import HelperServer
 
 from tests.gitfixture import GitTestCase
 
@@ -17,13 +18,8 @@ from tests.gitfixture import GitTestCase
 class ServerTestCase(GitTestCase):
     def setUp(self) -> None:
         super().setUp()
-        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self.port = server.server_address[1]
-        patch = mock.patch.multiple(
-            Handler, create=True, port=self.port, default_repo=None, jira=None
-        )
-        patch.start()
-        self.addCleanup(patch.stop)
+        server = HelperServer(0, default_repo=None, jira=None)
+        self.port = server.port
         threading.Thread(
             target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
         ).start()
@@ -75,6 +71,7 @@ class GuardTest(ServerTestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["remote"], "origin")
+        self.assertEqual(body["protected"], PROTECTED.pattern)
 
 
 class RouteTest(ServerTestCase):
@@ -141,6 +138,10 @@ class RouteTest(ServerTestCase):
         )
         self.assertEqual(conn.getresponse().status, 400)
 
+    def test_body_must_be_an_object(self):
+        status, _ = self.request("POST", "/api/apply", ["x"])
+        self.assertEqual(status, 400)
+
     def test_jira_not_set_up(self):
         status, body = self.request("POST", "/api/jira/filters", {})
         self.assertEqual(status, 422)
@@ -166,6 +167,15 @@ class ConfigTest(unittest.TestCase):
         for bad in ("http://x.atlassian.net", "x.atlassian.net", "https://u@x.net"):
             with self.subTest(url=bad), self.assertRaises(JiraError):
                 jira_site(bad)
+
+    def test_jira_from_settings(self):
+        self.assertIsNone(Jira.from_settings({}))
+        jira = Jira.from_settings(
+            {"url": "https://x.atlassian.net/x", "email": "a@b.c", "token": "t"}
+        )
+        self.assertEqual(jira.url, "https://x.atlassian.net")
+        with self.assertRaisesRegex(JiraError, "object"):
+            Jira.from_settings("x")
 
     def test_load_dotenv(self):
         with tempfile.TemporaryDirectory() as tmp:

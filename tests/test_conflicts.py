@@ -1,6 +1,7 @@
 import unittest
 
-from main import CONFLICT_CONTEXT, conflict_kinds, conflict_ranges
+from stager.config import CONFLICT_CONTEXT
+from stager.conflicts import conflict_kinds, conflict_ranges
 
 
 class ConflictKindsTest(unittest.TestCase):

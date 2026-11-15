@@ -1,6 +1,8 @@
 import unittest
 
-from main import GitError, Repo, repo_top
+from stager import merge
+from stager.conflicts import conflict_hunks
+from stager.git_repo import GitError, Repo, repo_top
 
 from tests.gitfixture import GitTestCase
 
@@ -62,7 +64,8 @@ class BranchesTest(GitTestCase):
 
 class DryRunTest(GitTestCase):
     def test_statuses(self):
-        results = Repo(self.path).dry_run(
+        results = merge.dry_run(
+            Repo(self.path),
             "master", ["feature-a", "old", "clash", "feature-b", "nope"]
         )
         by_head = {r["head"]: r for r in results}
@@ -77,24 +80,25 @@ class DryRunTest(GitTestCase):
 
     def test_touches_no_ref(self):
         before = self.git("for-each-ref")
-        Repo(self.path).dry_run("master", ["feature-a", "clash"])
+        merge.dry_run(Repo(self.path), "master", ["feature-a", "clash"])
         self.assertEqual(self.git("for-each-ref"), before)
 
     def test_conflict_hunks(self):
         repo = Repo(self.path)
-        conflict = repo.dry_run("master", ["feature-a", "clash"])[1]
-        view = repo.conflict_hunks(conflict["tree"], "file.txt")
+        conflict = merge.dry_run(repo, "master", ["feature-a", "clash"])[1]
+        view = conflict_hunks(repo, conflict["tree"], "file.txt")
         self.assertFalse(view["missing"] or view["binary"] or view["truncated"])
         kinds = [row[1] for row in view["hunks"][0]]
         self.assertEqual(kinds[:4], ["m-ours", "ours", "m-base", "base"])
         self.assertIn("theirs", kinds)
-        self.assertTrue(repo.conflict_hunks(conflict["tree"], "gone.txt")["missing"])
+        self.assertTrue(conflict_hunks(repo, conflict["tree"], "gone.txt")["missing"])
 
 
 class MergeTest(GitTestCase):
     def test_merges_in_a_worktree(self):
         status = self.git("status", "--porcelain")
-        result = Repo(self.path).merge_into_new_branch(
+        result = merge.merge_into_new_branch(
+            Repo(self.path),
             "integration/x", "master", ["feature-a", "old", "feature-b"], delete_on_fail=True
         )
         self.assertTrue(result["ok"])
@@ -107,7 +111,8 @@ class MergeTest(GitTestCase):
         self.assertEqual(len(merges), 2)
 
     def test_fast_forward(self):
-        result = Repo(self.path).merge_into_new_branch(
+        result = merge.merge_into_new_branch(
+            Repo(self.path),
             "integration/x", "master", ["feature-a", "feature-b"], delete_on_fail=True, ff=True
         )
         self.assertIn("1 fast-forwarded", result["result"])
@@ -116,7 +121,8 @@ class MergeTest(GitTestCase):
         )
 
     def test_conflict_deletes_the_branch(self):
-        result = Repo(self.path).merge_into_new_branch(
+        result = merge.merge_into_new_branch(
+            Repo(self.path),
             "integration/x", "master", ["feature-a", "clash"], delete_on_fail=True
         )
         self.assertFalse(result["ok"])
@@ -125,7 +131,8 @@ class MergeTest(GitTestCase):
         self.assertEqual(self.git("branch", "--list", "integration/x"), "")
 
     def test_conflict_keeps_the_branch(self):
-        result = Repo(self.path).merge_into_new_branch(
+        result = merge.merge_into_new_branch(
+            Repo(self.path),
             "integration/x", "master", ["feature-a", "clash"], delete_on_fail=False
         )
         self.assertTrue(result["created"])
@@ -140,7 +147,9 @@ class MergeTest(GitTestCase):
             ("bad..name", "not a valid"),
         ):
             with self.subTest(name=name), self.assertRaisesRegex(GitError, message):
-                repo.merge_into_new_branch(name, "master", ["feature-b"], delete_on_fail=True)
+                merge.merge_into_new_branch(
+                    repo, name, "master", ["feature-b"], delete_on_fail=True
+                )
 
 
 if __name__ == "__main__":
