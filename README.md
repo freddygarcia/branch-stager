@@ -29,6 +29,18 @@ Then open <http://127.0.0.1:8765>, choose **Settings › Source › Local clone*
 - The new branch stays local unless you tick **Push to origin** next to Apply. It is only pushed if every merge succeeded, and the box is unticked on every page load.
 - **Reload** runs `git fetch --prune origin` first.
 
+### Profiles
+
+A profile saves a merge setup: the selected branches, their order and the base branch. Profiles appear as tabs in the bar at the top of the page, so you can switch between similar merges with one click.
+
+- **Switch**: click a tab. It replaces the current selection and base. The base is skipped if that branch no longer exists.
+- **Save as…**: saves the current setup under a new name. Saving under an existing name overwrites that profile.
+- **Save**: updates the active profile. A dot on its tab means the selection or base has changed since it was saved.
+- **Delete**: hover a tab, click **×**, then click **Delete?** within 3 seconds.
+- **Delete all**: click **Delete all**, then click it again (it now reads **Delete N?**) within 3 seconds.
+
+Profiles are kept in this browser's localStorage, together with the other settings.
+
 ### GitHub only
 
 Open `branch-merger.html` directly in a browser (`file://`). In **Settings**, fill in the owner, the repository and a GitHub token. Merges then go through the GitHub API and only remote branches are listed.
