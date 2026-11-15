@@ -152,6 +152,15 @@
     .topbar-label { display: none; }
     .ptabs { flex-basis: 100%; order: 2; }
   }
+  .settings-section { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .settings-section h3 { font-size: 13.5px; margin: 0 0 10px; }
+  #jiraList { max-height: 320px; }
+  #jiraList .item { align-items: baseline; }
+  .jira-key { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+  .jira-summary { flex: 1; min-width: 0; word-break: break-word; }
+  .jira-who { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+  .tag.prog { color: var(--accent); border-color: var(--accent); }
+  @media (max-width: 640px) { .jira-who { display: none; } }
   .legend { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin: 0 3px 0 10px; }
 </style>
 </head>
@@ -198,24 +207,61 @@
         <span class="spacer"></span>
         <button id="forgetToken" class="github-only">Forget token</button>
       </div>
-      <div class="row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-        <b style="font-size:13px">Backup</b>
-        <span class="muted" style="font-size:12.5px">Settings, profiles, selection and history, copied as JSON.</span>
-        <span class="spacer"></span>
-        <label style="margin:0;white-space:nowrap" title="The token is a secret: leave this off unless the copy stays with you"><input id="exportToken" type="checkbox"> Include GitHub token</label>
-        <button id="exportData" title="Copy everything stored in this browser to the clipboard">Export to clipboard</button>
-        <button id="importData" title="Paste a backup: it replaces everything stored in this browser">Import…</button>
-      </div>
-      <div id="backupStatus" style="font-size:12.5px;margin-top:6px" hidden></div>
-      <form id="importForm" style="margin-top:8px" hidden>
-        <label for="importText">Paste a backup copied with Export to clipboard. It replaces everything stored in this browser.</label>
-        <textarea id="importText" rows="6" spellcheck="false" style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace"></textarea>
-        <div class="row" style="margin-top:6px">
-          <span class="spacer"></span>
-          <button type="button" id="importCancel">Cancel</button>
-          <button type="submit" class="primary">Import</button>
+
+      <div id="jiraSettings" class="settings-section">
+        <h3>Jira</h3>
+        <div class="grid">
+          <div><label for="jiraUrl">Jira site</label><input id="jiraUrl" type="text" placeholder="https://your-site.atlassian.net" autocomplete="off"></div>
+          <div><label for="jiraEmail">Jira email</label><input id="jiraEmail" type="text" autocomplete="off"></div>
+          <div><label for="jiraToken">Jira API token (stored in this browser)</label><input id="jiraToken" type="password" autocomplete="off" placeholder="ATATT…"></div>
         </div>
-      </form>
+        <div class="row" style="margin-top:12px">
+          <span class="muted" style="font-size:12.5px">Create a token at <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noopener">id.atlassian.com</a>. Leave all three empty to use the helper's JIRA_* environment variables.</span>
+          <span class="spacer"></span>
+          <button id="forgetJiraToken">Forget Jira token</button>
+        </div>
+      </div>
+
+      <div id="backupSettings" class="settings-section">
+        <h3>Backup</h3>
+        <div class="row">
+          <span class="muted" style="font-size:12.5px">Settings, Jira setup and query, profiles, selection and history, copied as JSON.</span>
+          <span class="spacer"></span>
+          <label style="margin:0;white-space:nowrap" title="The GitHub token and the Jira API token: leave this off unless the copy stays with you"><input id="exportToken" type="checkbox"> Include tokens and secrets</label>
+          <button id="exportData" title="Copy everything stored in this browser to the clipboard">Export to clipboard</button>
+          <button id="importData" title="Paste a backup: it replaces everything stored in this browser">Import…</button>
+        </div>
+        <div id="backupStatus" style="font-size:12.5px;margin-top:6px" hidden></div>
+        <form id="importForm" style="margin-top:8px" hidden>
+          <label for="importText">Paste a backup copied with Export to clipboard. It replaces everything stored in this browser.</label>
+          <textarea id="importText" rows="6" spellcheck="false" style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace"></textarea>
+          <div class="row" style="margin-top:6px">
+            <span class="spacer"></span>
+            <button type="button" id="importCancel">Cancel</button>
+            <button type="submit" class="primary">Import</button>
+          </div>
+        </form>
+      </div>
+    </details>
+  </section>
+
+  <section class="panel" id="jiraBox">
+    <details id="jiraDetails">
+      <summary><b>Jira</b> <span class="muted" id="jiraSummary"></span></summary>
+      <div id="jiraBody" style="margin-top:12px">
+        <div class="row">
+          <select id="jiraFilter" style="width:auto;max-width:300px" aria-label="Saved filter"></select>
+          <input id="jql" type="text" style="flex:1;min-width:240px" aria-label="JQL" placeholder="JQL, e.g. project = ODS AND sprint in openSprints() ORDER BY key">
+          <button id="jiraRun" class="primary">Search</button>
+        </div>
+        <div class="row" style="margin:10px 0">
+          <span class="muted" id="jiraCount"></span>
+          <span class="spacer"></span>
+          <button id="jiraSelectAll" title="Add the branches of every issue listed to the selection">Select all matching branches</button>
+        </div>
+        <div class="list" id="jiraList"></div>
+        <div class="row" style="margin-top:8px"><button id="jiraMore" hidden>Load more</button></div>
+      </div>
     </details>
   </section>
 
@@ -314,6 +360,12 @@
     // saved merges, switched between with Load: [{ name, base, branches, at }]
     profiles: [],
     activeProfile: '',
+    jiraUrl: '',
+    jiraEmail: '',
+    jiraToken: '',
+    jql: '',
+    jiraFilter: '',
+    jiraOpen: true,
   };
   // branches that must never be the new branch
   const PROTECTED = /^(master|main|staging|development|release\/.*|hotfix\/.*)$/;
@@ -373,6 +425,9 @@
   // so keys added later are exported without touching this code.
   const PREFIX = 'branchMerger.';
   const BACKUP_FORMAT = 'branch-merger-backup';
+  // state fields left out of a backup unless "Include tokens and secrets" is ticked
+  const SECRETS = ['token', 'jiraToken'];
+  const hasSecrets = (s) => SECRETS.some((k) => s?.[k]);
 
   function ownKeys() {
     const keys = [];
@@ -384,14 +439,14 @@
   }
 
   /** The backup as JSON text, and the main state it holds. */
-  function exportData(includeToken) {
+  function exportData(includeSecrets) {
     save();
     saveCompares();
     const data = {};
     for (const k of ownKeys()) {
       try { data[k] = JSON.parse(localStorage.getItem(k)); } catch { data[k] = localStorage.getItem(k); }
     }
-    if (!includeToken && data[KEY]) data[KEY] = { ...data[KEY], token: '' };
+    if (!includeSecrets && data[KEY]) data[KEY] = { ...data[KEY], ...Object.fromEntries(SECRETS.map((k) => [k, ''])) };
     const backup = { format: BACKUP_FORMAT, version: 1, exportedAt: new Date().toISOString(), data };
     return { text: JSON.stringify(backup, null, 2), stored: data[KEY] || {} };
   }
@@ -406,8 +461,15 @@
     const entries = Object.entries(file.data).filter(([k]) => k.startsWith(PREFIX));
     if (!entries.length) throw new Error('The backup holds no data.');
     const incoming = Object.fromEntries(entries);
-    // a backup made without the token keeps the token already in this browser
-    if (incoming[KEY] && !incoming[KEY].token && state.token) incoming[KEY] = { ...incoming[KEY], token: state.token };
+    // a backup made without the secrets keeps the ones already in this browser. The Jira
+    // token only belongs to the backup's Jira site and email, so it is kept only when they match.
+    const kept = {};
+    const inc = incoming[KEY];
+    if (inc && !inc.token && state.token) kept.token = state.token;
+    if (inc && !inc.jiraToken && state.jiraToken
+      && (inc.jiraUrl || '').trim() === state.jiraUrl.trim()
+      && (inc.jiraEmail || '').trim() === state.jiraEmail.trim()) kept.jiraToken = state.jiraToken;
+    if (inc) incoming[KEY] = { ...inc, ...kept };
     for (const k of ownKeys()) localStorage.removeItem(k);
     for (const [k, v] of Object.entries(incoming)) {
       localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
@@ -416,7 +478,11 @@
   }
 
   const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  const describe = (s) => `${count(s.profiles?.length || 0, 'profile', 'profiles')}, ${count(s.history?.length || 0, 'history entry', 'history entries')}`;
+  const describe = (s) => [
+    count(s.profiles?.length || 0, 'profile', 'profiles'),
+    count(s.history?.length || 0, 'history entry', 'history entries'),
+    ...(s.jiraUrl ? [`Jira ${s.jiraUrl.replace(/^https:\/\//, '')}`] : []),
+  ].join(', ');
   // shown once after the reload that follows an import
   const IMPORTED_NOTE = 'branchMerger:imported';
 
@@ -782,6 +848,8 @@
     $('hideArchived').checked = state.hideArchived;
     $('sourceBox').hidden = !HELPER;
     $('source').value = state.source;
+    $('jiraSettings').hidden = !HELPER; // Jira goes through the helper
+    for (const id of ['jiraUrl', 'jiraEmail', 'jiraToken']) $(id).value = state[id];
     $('settingsSummary').textContent = isLocal()
       ? `— local clone${state.localPath ? ` · ${state.localPath}` : ' · no folder'}`
       : `— ${state.owner}/${state.repo}${state.token ? '' : ' · no token'}`;
@@ -873,6 +941,7 @@
     $('pushNew').disabled = running;
     $('apply').textContent = isLocal() && $('pushNew').checked ? 'Apply & push' : 'Apply';
     renderProfiles(); // the "(modified)" note follows the selection and base
+    renderJira(); // the issues' branch buttons follow the selection and the branch list
   }
 
   function renderBase() {
@@ -1022,6 +1091,143 @@
     renderBranches();
     renderSelected();
     renderHistory();
+  }
+
+  // ---------------------------------------------------------------- jira (local helper)
+
+  // The helper calls Jira for the page (Jira does not allow browser calls from other
+  // sites), so the panel needs the page served by main.py. Results are not saved.
+  const jira = { filters: [], url: '', issues: [], next: null, jql: '', loading: false, error: null, setup: null };
+  let jiraRun = 0;
+  // sent with every Jira request; all empty: the helper uses its JIRA_* environment
+  const jiraSettings = () => ({ url: state.jiraUrl, email: state.jiraEmail, token: state.jiraToken });
+
+  /** Listed branches whose name has the issue key as a whole token: ODS-38 is not ODS-382. */
+  function branchesFor(key) {
+    const re = new RegExp(`(^|[^a-z0-9])${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![0-9])`, 'i');
+    return listed().filter((n) =>
+      re.test(n) && n !== state.base && !PROTECTED.test(n) && (!state.hideArchived || !ARCHIVED.test(n)));
+  }
+
+  async function loadJiraFilters() {
+    if (!HELPER) return renderJira();
+    try {
+      const { status, data } = await helper('/jira/filters', { method: 'POST', body: { jira: jiraSettings() } });
+      if (status !== 200) throw new Error(data?.error || `Loading Jira filters failed (${status})`);
+      jira.filters = data.filters;
+      jira.url = data.url;
+      jira.setup = null;
+    } catch (e) {
+      jira.filters = [];
+      jira.setup = e.message;
+    }
+    renderJiraFilters();
+    renderJira();
+    if (!jira.setup && state.jql) searchJira();
+  }
+
+  async function searchJira(more = false) {
+    const jql = more ? jira.jql : $('jql').value.trim();
+    if (!jql) return;
+    const run = ++jiraRun;
+    jira.loading = true;
+    jira.error = null;
+    if (!more) { jira.issues = []; jira.next = null; jira.jql = jql; }
+    renderJira();
+    try {
+      const { status, data } = await helper('/jira/search', { method: 'POST', body: { jql, next: more ? jira.next : null, jira: jiraSettings() } });
+      if (run !== jiraRun) return; // a newer search started meanwhile
+      if (status !== 200) throw new Error(data?.error || `Jira search failed (${status})`);
+      jira.issues = [...jira.issues, ...data.issues];
+      jira.next = data.next;
+      jira.url = data.url;
+    } catch (e) {
+      if (run !== jiraRun) return;
+      jira.error = e.message;
+    }
+    jira.loading = false;
+    renderJira();
+  }
+
+  /** Add the branches of these issues to the selection; if all are in it already, remove them. */
+  function selectForIssues(keys) {
+    const names = [...new Set(keys.flatMap(branchesFor))];
+    if (!names.length) return;
+    const all = names.every((n) => state.selected.includes(n));
+    state.selected = all
+      ? state.selected.filter((n) => !names.includes(n))
+      : [...state.selected, ...names.filter((n) => !state.selected.includes(n))];
+    save();
+    renderBranches();
+    renderSelected();
+  }
+
+  function renderJiraFilters() {
+    const select = $('jiraFilter');
+    select.replaceChildren(el('option', { value: '' }, 'Custom JQL'));
+    for (const f of jira.filters) {
+      select.append(el('option', { value: f.id, selected: f.id === state.jiraFilter }, `${f.favourite ? '★ ' : ''}${f.name}`));
+    }
+    if (!jira.filters.some((f) => f.id === state.jiraFilter)) select.value = '';
+  }
+
+  function issueRow(issue) {
+    const names = branchesFor(issue.key);
+    const picked = names.filter((n) => state.selected.includes(n)).length;
+    const statusClass = { done: 'ok', indeterminate: 'prog' }[issue.category] || '';
+    let branchControl;
+    if (!branches.length) branchControl = null;
+    else if (!names.length) branchControl = el('span', { class: 'tag', title: `No branch name contains ${issue.key}` }, 'no branch');
+    else {
+      const label = picked === names.length ? `✓ ${names.length} selected` : `+ ${names.length - picked} branch${names.length - picked === 1 ? '' : 'es'}`;
+      branchControl = el('button', {
+        class: `tag${picked === names.length ? ' ok' : ''}`,
+        title: `${names.join('\n')}\n\n${picked === names.length ? 'Click to remove them from the selection' : 'Click to add them to the selection'}`,
+        disabled: running,
+        onclick: () => selectForIssues([issue.key]),
+      }, label);
+    }
+    return el('div', { class: 'item' },
+      el('a', { class: 'jira-key', href: `${jira.url}/browse/${encodeURIComponent(issue.key)}`, target: '_blank', rel: 'noopener' }, issue.key),
+      el('span', { class: 'jira-summary', title: [issue.type, issue.priority].filter(Boolean).join(' · ') }, issue.summary),
+      issue.assignee ? el('span', { class: 'jira-who' }, issue.assignee) : null,
+      el('span', { class: `tag ${statusClass}` }, issue.status),
+      branchControl,
+      el('button', {
+        class: 'icon', title: `Filter the branch list by ${issue.key}`,
+        onclick: () => { $('filter').value = issue.key; renderBranches(); $('filter').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); },
+      }, '⌕'),
+    );
+  }
+
+  function renderJira() {
+    const list = $('jiraList');
+    const summary = $('jiraSummary');
+    $('jiraDetails').open = state.jiraOpen;
+    for (const id of ['jiraFilter', 'jql', 'jiraRun']) $(id).disabled = !HELPER || Boolean(jira.setup);
+    $('jiraRun').disabled ||= jira.loading;
+    $('jiraMore').hidden = !jira.next;
+    $('jiraMore').disabled = jira.loading;
+
+    const empty = (text, cls = '') => {
+      list.replaceChildren(el('div', { class: `empty ${cls}` }, text));
+      $('jiraCount').textContent = '';
+      $('jiraSelectAll').hidden = true;
+    };
+    if (!HELPER) { summary.textContent = '— needs the local helper'; return empty('Run python3 main.py --repo <clone> and open http://127.0.0.1:8765 to search Jira.'); }
+    if (jira.setup) { summary.textContent = '— not set up'; return empty(jira.setup, 'err'); }
+
+    summary.textContent = jira.issues.length ? `— ${jira.issues.length}${jira.next ? '+' : ''} issues` : '';
+    if (jira.error) return empty(jira.error, 'err');
+    if (!jira.issues.length) return empty(jira.loading ? 'Searching…' : jira.jql ? 'No issues match.' : 'Pick a saved filter or type JQL, then Search.');
+
+    const matched = jira.issues.filter((i) => branchesFor(i.key).length).length;
+    $('jiraCount').textContent = branches.length
+      ? `${jira.issues.length}${jira.next ? '+' : ''} issues, ${matched} with a branch`
+      : `${jira.issues.length}${jira.next ? '+' : ''} issues · Reload branches to match them`;
+    $('jiraSelectAll').hidden = !matched;
+    $('jiraSelectAll').disabled = running;
+    list.replaceChildren(...jira.issues.map(issueRow));
   }
 
   // ---------------------------------------------------------------- actions
@@ -1326,6 +1532,46 @@
     closeSaveAs();
   });
   $('clearHistory').addEventListener('click', () => { state.history = []; save(); renderHistory(); });
+  // a changed Jira connection starts over: new filters, no results from the old one
+  const jiraChanged = () => {
+    jiraRun++;
+    Object.assign(jira, { issues: [], next: null, jql: '', loading: false, error: null });
+    save();
+    loadJiraFilters();
+  };
+  for (const id of ['jiraUrl', 'jiraEmail', 'jiraToken']) {
+    $(id).addEventListener('change', (e) => { state[id] = e.target.value.trim(); jiraChanged(); });
+  }
+  $('forgetJiraToken').addEventListener('click', () => { state.jiraToken = ''; $('jiraToken').value = ''; jiraChanged(); });
+  $('jiraDetails').addEventListener('toggle', (e) => { state.jiraOpen = e.target.open; save(); });
+  $('jiraFilter').addEventListener('change', (e) => {
+    state.jiraFilter = e.target.value;
+    const f = jira.filters.find((x) => x.id === state.jiraFilter);
+    if (f) { $('jql').value = f.jql; state.jql = f.jql; }
+    save();
+    if (f) searchJira();
+  });
+  $('jql').addEventListener('input', (e) => {
+    state.jql = e.target.value;
+    // edited away from the saved filter: it is custom JQL now
+    if (state.jiraFilter && jira.filters.find((x) => x.id === state.jiraFilter)?.jql !== state.jql) {
+      state.jiraFilter = '';
+      $('jiraFilter').value = '';
+    }
+    save();
+  });
+  $('jql').addEventListener('keydown', (e) => { if (e.key === 'Enter') searchJira(); });
+  $('jiraRun').addEventListener('click', () => searchJira());
+  $('jiraMore').addEventListener('click', () => searchJira(true));
+  $('jiraSelectAll').addEventListener('click', () => {
+    const keys = jira.issues.map((i) => i.key);
+    const names = [...new Set(keys.flatMap(branchesFor))];
+    // always adds here: unlike a row's button it never removes
+    state.selected = [...state.selected, ...names.filter((n) => !state.selected.includes(n))];
+    save();
+    renderBranches();
+    renderSelected();
+  });
 
   const backupStatus = (text, cls) => {
     const box = $('backupStatus');
@@ -1334,19 +1580,20 @@
     box.textContent = text;
   };
   $('exportData').addEventListener('click', async () => {
-    const withToken = $('exportToken').checked;
+    const withSecrets = $('exportToken').checked;
     let backup;
     try {
-      backup = exportData(withToken);
+      backup = exportData(withSecrets);
     } catch (e) {
       backupStatus(`Export failed: ${e.message}`, 'err');
       return;
     }
     const { text, stored } = backup;
-    const tokenNote = withToken && stored.token ? ', token included: keep it private' : ', without the token';
+    const secret = hasSecrets(stored); // false when left out
+    const tokenNote = secret ? ', tokens and secrets included: keep it private' : ', without tokens or secrets';
     try {
       await navigator.clipboard.writeText(text);
-      backupStatus(`Copied ${describe(stored)} to the clipboard${tokenNote}.`, withToken && stored.token ? 'warn' : 'ok');
+      backupStatus(`Copied ${describe(stored)} to the clipboard${tokenNote}.`, secret ? 'warn' : 'ok');
     } catch {
       // clipboard blocked (permissions, insecure origin): show the text to copy by hand
       $('importForm').hidden = true;
@@ -1390,6 +1637,8 @@
   } catch { /* note only */ }
 
   $('newName').value = state.prefix + stamp();
+  $('jql').value = state.jql;
+  renderJiraFilters();
   renderAll();
   (async () => {
     // first visit in local mode: start from the folder given to the helper with --repo
@@ -1401,6 +1650,8 @@
     }
     if (ready()) reload();
   })();
+  if (ready()) reload();
+  loadJiraFilters();
 })();
 </script>
 </body>
