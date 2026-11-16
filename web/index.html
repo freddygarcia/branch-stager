@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Branch Merger</title>
+<!--
+  Served by the helper: run `python3 main.py` and open http://127.0.0.1:8765.
+  The script is in js/ (ES modules, no build step; main.js starts it), the styles in app.css.
+-->
+<link rel="stylesheet" href="app.css">
+<script type="module" src="js/main.js"></script>
+</head>
+<body>
+<header class="topbar" id="profileBar" aria-label="Merge profiles">
+  <div class="topbar-inner">
+    <span class="topbar-label">Profiles</span>
+    <nav class="ptabs" id="profileTabs" role="tablist"></nav>
+    <form class="psave" id="profileForm" hidden>
+      <input id="profileName" type="text" placeholder="Profile name" aria-label="New profile name" autocomplete="off">
+      <button type="submit" class="primary">Save</button>
+      <button type="button" id="profileCancel" class="icon" title="Cancel (Esc)">×</button>
+    </form>
+    <div class="pactions" id="profileActions">
+      <button id="profileSave" title="Save the current selection and base into the active profile">Save</button>
+      <button id="profileSaveAs" title="Save the current selection, order and base as a new profile">Save as…</button>
+      <button id="profileDeleteAll" class="pdanger" title="Delete every saved profile">Delete all</button>
+    </div>
+  </div>
+</header>
+<main>
+  <h1>Branch Merger</h1>
+  <p class="sub">Select branches, press <b>Apply</b>: a new branch is cut from the base branch and the selected branches are merged into it, in order.</p>
+
+  <!-- hidden by js/main.js: modules don't run when the file is opened from disk -->
+  <p class="panel err" id="needsHelper">Branch Merger runs through its local helper: start <code>python3 main.py</code> and open <a href="http://127.0.0.1:8765">http://127.0.0.1:8765</a>.</p>
+  <p class="panel err" id="helperDown" hidden></p>
+
+  <section class="panel">
+    <details id="settingsBox">
+      <summary><b>Settings</b> <span class="muted" id="settingsSummary"></span></summary>
+      <div class="grid" style="margin-top:12px">
+        <div>
+          <label for="source">Source</label>
+          <select id="source">
+            <option value="local">Local clone (git, local branches included)</option>
+            <option value="github">GitHub (remote branches only)</option>
+          </select>
+        </div>
+        <div data-source="local"><label for="localPath">Repository folder</label><input id="localPath" type="text" spellcheck="false" placeholder="/path/to/your/clone"></div>
+        <div data-source="github"><label for="owner">Owner</label><input id="owner" type="text"></div>
+        <div data-source="github"><label for="repo">Repository</label><input id="repo" type="text"></div>
+        <div data-source="github"><label for="token">GitHub token (stored in this browser)</label><input id="token" type="password" autocomplete="off" placeholder="github_pat_…"></div>
+        <div><label for="prefix">New branch prefix</label><input id="prefix" type="text"></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <label style="margin:0"><input id="deleteOnFail" type="checkbox"> Delete the new branch when a merge conflicts</label>
+        <span class="spacer"></span>
+        <button id="forgetToken" data-source="github">Forget token</button>
+      </div>
+
+      <div class="settings-section">
+        <h3>Jira</h3>
+        <div class="grid">
+          <div><label for="jiraUrl">Jira site</label><input id="jiraUrl" type="text" placeholder="https://your-site.atlassian.net" autocomplete="off"></div>
+          <div><label for="jiraEmail">Jira email</label><input id="jiraEmail" type="text" autocomplete="off"></div>
+          <div><label for="jiraToken">Jira API token (stored in this browser)</label><input id="jiraToken" type="password" autocomplete="off" placeholder="ATATT…"></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <span class="muted" style="font-size:12.5px">Create a token at <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noopener">id.atlassian.com</a>. Leave all three empty to use the helper's JIRA_* environment variables.</span>
+          <span class="spacer"></span>
+          <button id="forgetJiraToken">Forget Jira token</button>
+        </div>
+      </div>
+
+      <div id="backupSettings" class="settings-section">
+        <h3>Backup</h3>
+        <div class="row">
+          <span class="muted" style="font-size:12.5px">Settings, Jira setup and query, profiles, selection and history, copied as JSON.</span>
+          <span class="spacer"></span>
+          <label style="margin:0;white-space:nowrap" title="The GitHub token and the Jira API token: leave this off unless the copy stays with you"><input id="exportToken" type="checkbox"> Include tokens and secrets</label>
+          <button id="exportData" title="Copy everything stored in this browser to the clipboard">Export to clipboard</button>
+          <button id="importData" title="Paste a backup: it replaces everything stored in this browser">Import…</button>
+        </div>
+        <div id="backupStatus" style="font-size:12.5px;margin-top:6px" hidden></div>
+        <form id="importForm" style="margin-top:8px" hidden>
+          <label for="importText">Paste a backup copied with Export to clipboard. It replaces everything stored in this browser.</label>
+          <textarea id="importText" class="mono-box" rows="6" spellcheck="false"></textarea>
+          <div class="row" style="margin-top:6px">
+            <span class="spacer"></span>
+            <button type="button" id="importCancel">Cancel</button>
+            <button type="submit" class="primary">Import</button>
+          </div>
+        </form>
+      </div>
+    </details>
+  </section>
+
+  <section class="panel" id="jiraBox">
+    <details id="jiraDetails">
+      <summary><b>Jira</b> <span class="muted" id="jiraSummary"></span></summary>
+      <div id="jiraBody" style="margin-top:12px">
+        <div class="row">
+          <select id="jiraFilter" style="width:auto;max-width:300px" aria-label="Saved filter"></select>
+          <input id="jql" type="text" style="flex:1;min-width:240px" aria-label="JQL" placeholder="JQL, e.g. project = ODS AND sprint in openSprints() ORDER BY key">
+          <button id="jiraRun" class="primary">Search</button>
+        </div>
+        <div class="row" style="margin:10px 0">
+          <span class="muted" id="jiraCount"></span>
+          <span class="spacer"></span>
+          <button id="jiraSelectAll" title="Add the branches of every issue listed to the selection">Select all matching branches</button>
+        </div>
+        <div class="list" id="jiraList"></div>
+        <div class="row" style="margin-top:8px"><button id="jiraMore" hidden>Load more</button></div>
+      </div>
+    </details>
+  </section>
+
+  <div class="cols">
+    <section class="panel">
+      <div class="row" style="margin-bottom:10px">
+        <h2 style="margin:0">Branches</h2>
+        <span class="muted" id="branchCount"></span>
+        <span class="spacer"></span>
+        <button id="reload">Reload</button>
+      </div>
+      <div class="row" style="margin-bottom:10px">
+        <input id="filter" type="text" placeholder="Filter, e.g. ODS-3821" style="flex:1">
+        <label style="margin:0;white-space:nowrap"><input id="hideArchived" type="checkbox"> Hide archived/*</label>
+      </div>
+      <div class="list" id="branchList"><div class="empty">Add a token in Settings, then Reload.</div></div>
+    </section>
+
+    <section class="panel">
+      <h2>Selected <span class="muted" style="font-weight:400">(merge order)</span></h2>
+      <div class="list" id="selectedList"></div>
+      <div class="row" style="margin-top:8px">
+        <button id="clearSel">Clear</button>
+        <span class="spacer"></span>
+        <span id="drySummary" class="muted" style="font-size:12.5px"></span>
+      </div>
+
+      <div style="margin-top:16px">
+        <label for="base">Base branch (the new branch starts here)</label>
+        <select id="base"></select>
+      </div>
+      <div style="margin-top:10px">
+        <label for="newName">New branch name</label>
+        <div class="row">
+          <input id="newName" type="text" style="flex:1">
+          <button id="renew" class="icon" title="New timestamped name">↻</button>
+        </div>
+      </div>
+      <fieldset id="mergeMode" class="field" style="margin-top:10px">
+        <legend>Merge strategy</legend>
+        <div class="seg" role="radiogroup" aria-describedby="mergeHint">
+          <label><input type="radio" name="mergeMode" value="no-ff" checked><span>Merge commit <code>--no-ff</code></span></label>
+          <label><input type="radio" name="mergeMode" value="ff"><span>Fast-forward <code>--ff</code></span></label>
+        </div>
+        <div id="mergeHint" class="hint"></div>
+      </fieldset>
+      <div class="row" style="margin-top:14px">
+        <span class="spacer"></span>
+        <label id="pushBox" hidden style="margin:0;font-size:14px;color:var(--text);white-space:nowrap" title="After all merges succeed, push the new branch to origin (git push --set-upstream). Off by default on every page load.">
+          <input id="pushNew" type="checkbox"> Push to origin
+        </label>
+        <button id="apply" class="primary">Apply</button>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel" id="conflictBox" hidden>
+    <div class="row" style="margin-bottom:6px">
+      <h2 style="margin:0;word-break:break-all" id="conflictTitle">Conflicts</h2>
+      <span class="spacer"></span>
+      <button id="expandConflicts" class="icon" title="Expand every file">Expand all</button>
+      <button id="collapseConflicts" class="icon" title="Collapse every file">Collapse all</button>
+      <button id="closeConflicts" class="icon" title="Close">×</button>
+    </div>
+    <p class="muted" id="conflictSub" style="margin:0 0 10px"></p>
+    <div id="conflictFiles"></div>
+  </section>
+
+  <section class="panel" id="runBox" hidden>
+    <h2>Run</h2>
+    <div class="log" id="log"></div>
+    <div class="row" id="runLinks" style="margin-top:10px"></div>
+  </section>
+
+  <section class="panel">
+    <div class="row" style="margin-bottom:10px">
+      <h2 style="margin:0">History</h2>
+      <span class="spacer"></span>
+      <button id="clearHistory">Clear history</button>
+    </div>
+    <div id="history"></div>
+  </section>
+</main>
+
+</body>
+</html>
