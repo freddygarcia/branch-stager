@@ -144,6 +144,7 @@ async function apply() {
     ff: mergeFf(),
     push: pushNew(),
     deleteOnFail: state.deleteOnFail,
+    profile: activeProfile()?.name || '', // named in the commit that describes a rebuild
   };
   // the tip seen at the last Reload: GitHub only replaces the branch while it is still there
   run.lease = session.shas[run.name] ?? null;

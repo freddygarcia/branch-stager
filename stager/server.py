@@ -151,6 +151,8 @@ def apply(req: Request) -> dict:
             ff=req.body.get("ff") is True,
             push=req.body.get("push") is True,
             rebuild=req.body.get("rebuild") is True,
+            # one line: it goes into a commit message trailer
+            profile=" ".join(str(req.body.get("profile") or "").split())[:200],
         )
 
 

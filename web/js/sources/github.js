@@ -43,12 +43,48 @@ async function fastForward(name, head, log) {
   return sha;
 }
 
+/** The message of the empty commit that ends a rebuild: the same as the helper's describe_build. */
+function buildMessage(name, base, baseSha, heads, profile) {
+  const n = heads.length;
+  return [
+    `Build ${name}: ${base} + ${n} branch${n === 1 ? '' : 'es'}`,
+    '',
+    `Rebuilt by Branch Merger${profile ? ` from profile ${profile}` : ''}: the base and these branches, merged in this order.`,
+    '',
+    `Branch-Merger-Base: ${base} ${baseSha}`,
+    ...heads.map(([head, sha]) => `Branch-Merger-Branch: ${head} ${sha}`),
+    ...(profile ? [`Branch-Merger-Profile: ${profile}`] : []),
+  ].join('\n') + '\n';
+}
+
+/** Add the empty commit describing the build on top of `tip`: { sha } or { error }. */
+async function describe(tip, { name, base, branches, profile, built }) {
+  const heads = [];
+  for (const head of branches) {
+    let sha = built?.heads?.[head];
+    if (!sha) { // already contained: the merges API doesn't say at which commit
+      const ref = await gh(`/git/ref/heads/${refPath(head)}`);
+      sha = ref.status === 200 ? ref.data.object.sha : '?';
+    }
+    heads.push([head, sha]);
+  }
+  const commit = await gh(`/git/commits/${tip}`);
+  if (commit.status !== 200) return { error: `Could not read ${tip.slice(0, 8)} (${commit.status})` };
+  const oneLine = (profile || '').split(/\s+/).filter(Boolean).join(' ');
+  const made = await gh('/git/commits', {
+    method: 'POST',
+    body: { message: buildMessage(name, base, built?.base || '?', heads, oneLine), tree: commit.data.tree.sha, parents: [tip] },
+  });
+  if (made.status !== 201) return { error: `Could not add the commit describing the build (${made.status}): ${made.data?.message || ''}` };
+  return { sha: made.data.sha };
+}
+
 /**
  * Rebuild `name` in place: build on a temporary branch, then move `name` there once every
  * merge succeeded. `lease` is the tip of `name` seen at the last Reload (null: it did not
  * exist); `name` is only moved while it is still there, so nobody's push is overwritten.
  */
-async function rebuild({ name, base, branches, ff, lease, log }) {
+async function rebuild({ name, base, branches, ff, lease, profile, log }) {
   const tmp = `${name}-rebuild-${Date.now()}`;
   log(`Rebuild ${name}${lease ? ` (now at ${lease.slice(0, 8)})` : ' (new)'}, on ${tmp} first`);
   const outcome = await build({ name: tmp, into: name, base, branches, ff, deleteOnFail: true, log });
@@ -64,7 +100,10 @@ async function rebuild({ name, base, branches, ff, lease, log }) {
     return { ok: false, result: why, pushed: false, where: lease ? 'remote' : null };
   };
   if (tip.status !== 200) return fail(`Could not read ${tmp} (${tip.status})`);
-  const sha = tip.data.object.sha;
+  const described = await describe(tip.data.object.sha, { name, base, branches, profile, built: outcome.built });
+  if (described.error) return fail(described.error);
+  const { sha } = described;
+  log(`  ✎ described the build in ${sha.slice(0, 8)}`, 'muted');
   const now = await gh(`/git/ref/heads/${refPath(name)}`);
   const current = now.status === 200 ? now.data.object.sha : null;
   if (current !== lease) return fail(`${name} changed on GitHub since the last Reload`);

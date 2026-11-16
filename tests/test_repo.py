@@ -171,16 +171,36 @@ class RebuildTest(GitTestCase):
         first = merge.rebuild_branch(repo, "env/qa", "master", ["feature-a"])
         self.assertTrue(first["ok"])
         built = self.sha("env/qa")
-        self.assertEqual(self.sha("env/qa^2"), self.sha("feature-a"))
+        # the tip is the empty commit describing the build; the merge is under it
+        self.assertEqual(self.sha("env/qa~1^2"), self.sha("feature-a"))
         # rebuilt from scratch: feature-a is gone, feature-b is in
         second = merge.rebuild_branch(repo, "env/qa", "master", ["feature-b"])
         self.assertTrue(second["ok"])
         self.assertEqual(second["built"]["heads"], {"feature-b": self.sha("feature-b")})
         self.assertNotEqual(self.sha("env/qa"), built)
-        self.assertEqual(self.sha("env/qa^1"), self.sha("master"))
-        self.assertEqual(self.sha("env/qa^2"), self.sha("feature-b"))
+        self.assertEqual(self.sha("env/qa~1^1"), self.sha("master"))
+        self.assertEqual(self.sha("env/qa~1^2"), self.sha("feature-b"))
         self.assertEqual(self.git("branch", "--show-current"), "master")
         self.assertEqual(self.git("worktree", "list").count("\n"), 0)
+
+    def test_describes_itself(self):
+        merge.rebuild_branch(
+            Repo(self.path), "env/qa", "master", ["feature-a", "old"], profile="QA"
+        )
+        # an empty commit: same tree as the merge under it
+        self.assertEqual(self.sha("env/qa^{tree}"), self.sha("env/qa~1^{tree}"))
+        self.assertEqual(
+            self.git("log", "-1", "--format=%s", "env/qa"),
+            "Build env/qa: master + 2 branches",
+        )
+        trailer = "--format=%(trailers:key=Branch-Merger-{},valueonly)"
+        read = lambda key: self.git("log", "-1", trailer.format(key), "env/qa")  # noqa: E731
+        self.assertEqual(read("Base"), f"master {self.sha('master')}")
+        self.assertEqual(
+            read("Branch").splitlines(),
+            [f"feature-a {self.sha('feature-a')}", f"old {self.sha('old')}"],
+        )
+        self.assertEqual(read("Profile"), "QA")
 
     def test_conflict_leaves_the_branch(self):
         repo = Repo(self.path)

@@ -99,6 +99,7 @@ def apply(
     ff: bool = False,
     push: bool = False,
     rebuild: bool = False,
+    profile: str = "",
 ) -> dict:
     """
     `merge_into_new_branch` (or `rebuild_branch` with `rebuild`), then push the branch
@@ -109,7 +110,7 @@ def apply(
     if rebuild:
         # the remote tip to replace, as of the last fetch: read before anything changes
         lease = repo.remote_sha(name) or ""
-        result = rebuild_branch(repo, name, base, heads, ff=ff)
+        result = rebuild_branch(repo, name, base, heads, ff=ff, profile=profile)
     else:
         lease = None
         result = merge_into_new_branch(
@@ -130,12 +131,19 @@ def apply(
 
 
 def rebuild_branch(
-    repo: Repo, name: str, base: str, heads: list[str], *, ff: bool = False
+    repo: Repo,
+    name: str,
+    base: str,
+    heads: list[str],
+    *,
+    ff: bool = False,
+    profile: str = "",
 ) -> dict:
     """
     Build `name` again from `base` and `heads`, whether or not it exists: an environment
     branch rebuilt in place. The merges run on a detached temporary worktree and `name`
     only moves once all of them succeeded, so a conflict leaves it exactly as it was.
+    The last commit is an empty one that describes the build (`describe_build`).
     Returns {ok, result, log, created} like `merge_into_new_branch`.
     """
     repo.check_new_branch_name(name, may_exist=True)
@@ -171,7 +179,17 @@ def rebuild_branch(
             # an existing branch still is where it was: its links stay useful
             result["created"] = bool(old)
             return result
+        repo.run(
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "--no-verify",
+            "-m",
+            describe_build(name, base, base_sha, head_shas, profile=profile),
+            cwd=worktree,
+        )
         new = repo.out("rev-parse", "HEAD", cwd=worktree)
+        run.say(f"  ✎ described the build in {new[:8]}", "muted")
         # moves the branch only if nobody moved it since `old` was read ("" = must not exist)
         repo.run(
             "update-ref",
@@ -188,6 +206,38 @@ def rebuild_branch(
         return run.done()
     finally:
         repo.remove_worktree(worktree)
+
+
+TRAILER = "Branch-Merger"
+
+
+def describe_build(
+    name: str,
+    base: str,
+    base_sha: str,
+    head_shas: list[tuple[str, str]],
+    *,
+    profile: str = "",
+) -> str:
+    """
+    The message of the empty commit that ends a rebuild: what `name` was built from, as
+    git trailers, so `git log -1 name` shows it without this tool. Read them back with
+    `git log -1 --format='%(trailers:key=Branch-Merger-Branch,valueonly)' name`.
+    """
+    count = len(head_shas)
+    lines = [
+        f"Build {name}: {base} + {count} branch{'' if count == 1 else 'es'}",
+        "",
+        "Rebuilt by Branch Merger"
+        + (f" from profile {profile}" if profile else "")
+        + ": the base and these branches, merged in this order.",
+        "",
+        f"{TRAILER}-Base: {base} {base_sha}",
+        *(f"{TRAILER}-Branch: {head} {sha}" for head, sha in head_shas),
+    ]
+    if profile:
+        lines.append(f"{TRAILER}-Profile: {profile}")
+    return "\n".join(lines) + "\n"
 
 
 def merge_into_new_branch(

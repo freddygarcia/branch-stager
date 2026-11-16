@@ -61,6 +61,7 @@ A profile can name an **environment branch**, for example `env/staging`. With th
 
 - The field is saved into the active profile as soon as you leave it; empty means a new branch on every Apply. The tab shows it (`QA → env/qa`).
 - The merges run on a detached temporary worktree. The environment branch only moves once every merge succeeded, so a conflict leaves it exactly as it was.
+- The last commit of a rebuild is an empty one that describes it: the base and every branch, with the commit each was at, as git trailers (`Branch-Merger-Base`, `Branch-Merger-Branch`, `Branch-Merger-Profile`). Anyone can see what an environment has with `git log -1 origin/env/staging`, or list its branches with `git log -1 --format='%(trailers:key=Branch-Merger-Branch,valueonly)' origin/env/staging`.
 - With **Push to origin**, the push uses `--force-with-lease` against the `origin` tip seen at the last Reload. If someone pushed to it since, nothing is overwritten: the push fails and says so. Reload, then rebuild again to replace it.
 - It can't be a protected name (so `env/staging`, not `staging`), the base, or one of the selected branches. In the local clone it can't be checked out in any folder while it is rebuilt.
 - On GitHub, the rebuild happens on a temporary `<name>-rebuild-<time>` branch, which is deleted afterwards. The environment branch is only moved if it is still at the tip seen at the last Reload.
