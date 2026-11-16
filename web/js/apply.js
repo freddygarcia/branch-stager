@@ -8,6 +8,7 @@ import { activeProfile, envTarget, setEnvTarget } from './profiles.js';
 import { renderSelected } from './selected.js';
 import { branchUrl, compareUrl, repoUrl } from './sources/github.js';
 import { ready, source } from './sources/index.js';
+import { recordBuild } from './stale.js';
 import { isProtected, session, state } from './state.js';
 
 const DEPLOY_WORKFLOW = 'cd.fullstack.deploy.yml';
@@ -166,6 +167,7 @@ async function apply() {
     name: run.name, base: run.base, branches: run.branches, rebuilt: run.rebuild,
     ok: outcome.ok, result: outcome.result, source: src.id, pushed: outcome.pushed,
   });
+  if (outcome.ok) recordBuild(run, outcome.built);
   session.running = false;
   if (outcome.ok && !run.rebuild) renewName();
   renderSelected();

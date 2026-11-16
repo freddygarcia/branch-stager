@@ -26,6 +26,7 @@ async function apply({ name, base, branches, ff, push, deleteOnFail, rebuild, lo
     ok: data.ok,
     result: data.result,
     pushed: data.pushed,
+    built: data.built,
     where: data.pushed ? 'remote' : data.created ? 'local' : null,
   };
 }

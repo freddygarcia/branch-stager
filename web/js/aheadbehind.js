@@ -72,6 +72,30 @@ function refresh(name) {
   }
 }
 
+/** How commit `to` compares with commit `from` ({ ahead, behind } or { error }); undefined until loaded. */
+export const cachedCompare = (from, to) => compares[`${from}...${to}`];
+
+const pending = new Set();
+/** Load the comparisons of `pairs` ([from, to]) that aren't cached; then `done()`, if any arrived. */
+export async function loadCompares(pairs, done) {
+  const keys = [...new Set(pairs.map(([a, b]) => `${a}...${b}`))]
+    .filter((k) => !compares[k] && !pending.has(k));
+  if (!keys.length || !ready()) return;
+  keys.forEach((k) => pending.add(k));
+  await Promise.all(keys.map(async (key) => {
+    const [from, to] = key.split('...');
+    try {
+      compares[key] = await source().compare(from, to);
+    } catch (e) {
+      compares[key] = { error: e.message };
+    } finally {
+      pending.delete(key);
+    }
+  }));
+  saveCompares();
+  done();
+}
+
 let run = 0;
 /** Fetch the missing ahead/behind counts of `names`, a few requests at a time. */
 export async function loadAheadBehind(names) {

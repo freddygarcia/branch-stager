@@ -103,7 +103,8 @@ def apply(
     """
     `merge_into_new_branch` (or `rebuild_branch` with `rebuild`), then push the branch
     when asked. Only a branch whose merges all succeeded is pushed; a rebuilt branch is
-    pushed with --force-with-lease. Returns {ok, result, log, created, pushed}.
+    pushed with --force-with-lease. Returns {ok, result, log, created, pushed}, and on
+    success `built`: the commits merged, {base: sha, heads: {name: sha}}.
     """
     if rebuild:
         # the remote tip to replace, as of the last fetch: read before anything changes
@@ -146,6 +147,7 @@ def rebuild_branch(
     base_sha = repo.resolve(base)
     head_shas = [(head, repo.resolve(head)) for head in heads]
     run = MergeRun(repo, name, base, ff=ff)
+    run.built = {"base": base_sha, "heads": dict(head_shas)}
     run.say(f"Rebuild {name}" + (f" (now at {old[:8]})" if old else " (new)"))
     run.say(f"Base {base}")
     run.say(f"  at {base_sha[:8]}", "muted")
@@ -207,6 +209,7 @@ def merge_into_new_branch(
     base_sha = repo.resolve(base)
     head_shas = [(head, repo.resolve(head)) for head in heads]
     run = MergeRun(repo, name, base, ff=ff)
+    run.built = {"base": base_sha, "heads": dict(head_shas)}
     run.say(f"Base {base}")
     run.say(f"  at {base_sha[:8]}", "muted")
     run.say(
@@ -258,6 +261,8 @@ class MergeRun:
         self.fast_forwarded = 0
         self.up_to_date = 0
         self.conflicted = False
+        # the commits merged: {"base": sha, "heads": {name: sha}}, returned on success
+        self.built: dict = {}
 
     def say(self, text: str, cls: str = "") -> None:
         self.log.append({"text": text, "cls": cls})
@@ -321,7 +326,13 @@ class MergeRun:
         result = f"{self.merged} merged{ff_note}" + (
             f", {self.up_to_date} up to date" if self.up_to_date else ""
         )
-        return {"ok": True, "result": result, "log": self.log, "created": True}
+        return {
+            "ok": True,
+            "result": result,
+            "log": self.log,
+            "created": True,
+            "built": self.built,
+        }
 
     def failed(self, head: str, *, created: bool) -> dict:
         outcome = f"Conflict: {head}" if self.conflicted else f"Merge failed: {head}"

@@ -2,6 +2,7 @@
 
 import { $, el } from './dom.js';
 import { renderAll } from './main.js';
+import { staleBadge } from './stale.js';
 import { save, session, state } from './state.js';
 
 /** True when the selection and base are exactly what the profile saved. */
@@ -43,6 +44,7 @@ function tab(p) {
     el('span', { class: 'pname' }, p.name),
     p.target ? el('span', { class: 'penv' }, `→ ${p.target}`) : null,
     el('span', { class: 'pcount' }, String(p.branches.length)),
+    staleBadge(p),
     dirty ? el('span', { class: 'pdirty', title: 'Unsaved changes' }) : null,
     el('span', {
       class: `pdel${isArmed ? ' armed' : ''}`,
@@ -75,11 +77,12 @@ export function renderProfiles() {
 
 /**
  * Save the current selection and base as profile `name` (overwritten if it exists).
- * An existing profile keeps its environment branch.
+ * An existing profile keeps its environment branch and its last build.
  */
 function storeProfile(name) {
   const i = state.profiles.findIndex((p) => p.name === name);
-  const entry = { name, base: state.base, branches: [...state.selected], at: Date.now(), target: state.profiles[i]?.target || '' };
+  const old = state.profiles[i];
+  const entry = { name, base: state.base, branches: [...state.selected], at: Date.now(), target: old?.target || '', built: old?.built };
   if (i >= 0) state.profiles[i] = entry;
   else state.profiles = [...state.profiles, entry].sort((a, b) => a.name.localeCompare(b.name));
   state.activeProfile = name;

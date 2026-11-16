@@ -29,18 +29,18 @@ async function compare(base, head) {
 }
 
 // GitHub's merge API always makes a merge commit. For --ff, move `name` to `head` when
-// `head` is strictly ahead of it; true if done. Otherwise false, and the caller merges.
+// `head` is strictly ahead of it; its sha if done. Otherwise null, and the caller merges.
 async function fastForward(name, head, log) {
   const cmp = await gh(`/compare/${refPath(name)}...${refPath(head)}`);
-  if (cmp.status !== 200 || cmp.data?.status !== 'ahead') return false;
+  if (cmp.status !== 200 || cmp.data?.status !== 'ahead') return null;
   const headRef = await gh(`/git/ref/heads/${refPath(head)}`);
-  if (headRef.status !== 200) return false;
+  if (headRef.status !== 200) return null;
   const sha = headRef.data.object.sha;
   // force: false, so GitHub refuses the update unless it is a fast-forward
   const moved = await gh(`/git/refs/heads/${refPath(name)}`, { method: 'PATCH', body: { sha, force: false } });
-  if (moved.status !== 200) return false;
+  if (moved.status !== 200) return null;
   log(`  ✓ ${head}  → ${sha.slice(0, 8)}  (fast-forward)`, 'ok');
-  return true;
+  return sha;
 }
 
 /**
@@ -51,10 +51,10 @@ async function fastForward(name, head, log) {
 async function rebuild({ name, base, branches, ff, lease, log }) {
   const tmp = `${name}-rebuild-${Date.now()}`;
   log(`Rebuild ${name}${lease ? ` (now at ${lease.slice(0, 8)})` : ' (new)'}, on ${tmp} first`);
-  const built = await build({ name: tmp, into: name, base, branches, ff, deleteOnFail: true, log });
-  if (!built.ok) {
+  const outcome = await build({ name: tmp, into: name, base, branches, ff, deleteOnFail: true, log });
+  if (!outcome.ok) {
     log(`${name} not changed`, 'warn');
-    return { ...built, where: lease ? 'remote' : null };
+    return { ...outcome, where: lease ? 'remote' : null };
   }
   const tip = await gh(`/git/ref/heads/${refPath(tmp)}`);
   const removeTmp = () => gh(`/git/refs/heads/${refPath(tmp)}`, { method: 'DELETE' });
@@ -74,7 +74,7 @@ async function rebuild({ name, base, branches, ff, lease, log }) {
   if (![200, 201].includes(moved.status)) return fail(`Could not update ${name} (${moved.status}): ${moved.data?.message || ''}`);
   log(current ? `${name}: ${current.slice(0, 8)} → ${sha.slice(0, 8)}` : `Created ${name} at ${sha.slice(0, 8)}`, 'ok');
   await removeTmp();
-  return { ...built, where: 'remote' };
+  return { ...outcome, where: 'remote' };
 }
 
 const apply = (run) => (run.rebuild ? rebuild(run) : build(run));
@@ -92,11 +92,15 @@ async function build({ name, into = name, base, branches, ff, deleteOnFail, log 
   if (created.status !== 201) throw new Error(`Could not create ${name} (${created.status}): ${created.data?.message || ''}`);
   log(`Created ${name}`, 'ok');
 
+  // the commits merged (a branch already contained is left out: GitHub doesn't say)
+  const built = { base: sha, heads: {} };
   let merged = 0;
   let fastForwarded = 0;
   let upToDate = 0;
   for (const [i, head] of branches.entries()) {
-    if (ff && await fastForward(name, head, log)) {
+    const ffSha = ff ? await fastForward(name, head, log) : null;
+    if (ffSha) {
+      built.heads[head] = ffSha;
       merged++;
       fastForwarded++;
       continue;
@@ -106,6 +110,8 @@ async function build({ name, into = name, base, branches, ff, deleteOnFail, log 
       body: { base: name, head, commit_message: `Merge branch '${head}' into ${into}` },
     });
     if (res.status === 201) {
+      const headSha = res.data.parents?.[1]?.sha;
+      if (headSha) built.heads[head] = headSha;
       merged++;
       log(`  ✓ ${head}  → ${res.data.sha.slice(0, 8)}`, 'ok');
       continue;
@@ -131,7 +137,7 @@ async function build({ name, into = name, base, branches, ff, deleteOnFail, log 
 
   const ffNote = fastForwarded ? ` (${fastForwarded} fast-forwarded)` : '';
   log(`Done: ${merged} merged${ffNote}, ${upToDate} already contained.`, 'ok');
-  return { ok: true, result: `${merged} merged${ffNote}${upToDate ? `, ${upToDate} up to date` : ''}`, pushed: false, where: 'remote' };
+  return { ok: true, result: `${merged} merged${ffNote}${upToDate ? `, ${upToDate} up to date` : ''}`, pushed: false, where: 'remote', built };
 }
 
 export default {

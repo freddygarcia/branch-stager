@@ -8,7 +8,8 @@
 //   apply({ name, base, branches, ff, push, deleteOnFail, rebuild, lease, log })
 //                           rebuild: replace `name` (an environment branch) in place;
 //                           lease: its tip at the last Reload, null if it did not exist
-//                           -> { ok, result, pushed, where: 'remote' | 'local' | null }
+//                           -> { ok, result, pushed, where: 'remote' | 'local' | null,
+//                                built: on success, the commits merged { base, heads: { name: sha } } }
 //   dryRun(base, branches), conflict(tree, path): local clone only
 
 import { state } from '../state.js';

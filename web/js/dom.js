@@ -20,6 +20,16 @@ export function el(tag, props = {}, ...children) {
 /** "1 file", "2 files". */
 export const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
+/** "just now", "5 min ago", "3 h ago", "2 days ago". */
+export function ago(at, now = Date.now()) {
+  const min = Math.round((now - at) / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} h ago`;
+  return count(Math.round(h / 24), 'day ago', 'days ago');
+}
+
 /** 20261115-1642 */
 export function stamp(date = new Date()) {
   const p = (n) => String(n).padStart(2, '0');

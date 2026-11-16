@@ -110,6 +110,19 @@ class MergeTest(GitTestCase):
         merges = self.git("rev-list", "--merges", "master..integration/x").split()
         self.assertEqual(len(merges), 2)
 
+    def test_reports_the_commits_merged(self):
+        result = merge.merge_into_new_branch(
+            Repo(self.path),
+            "integration/x", "master", ["feature-a", "old"], delete_on_fail=True
+        )
+        self.assertEqual(
+            result["built"],
+            {
+                "base": self.sha("master"),
+                "heads": {"feature-a": self.sha("feature-a"), "old": self.sha("old")},
+            },
+        )
+
     def test_fast_forward(self):
         result = merge.merge_into_new_branch(
             Repo(self.path),
@@ -162,6 +175,7 @@ class RebuildTest(GitTestCase):
         # rebuilt from scratch: feature-a is gone, feature-b is in
         second = merge.rebuild_branch(repo, "env/qa", "master", ["feature-b"])
         self.assertTrue(second["ok"])
+        self.assertEqual(second["built"]["heads"], {"feature-b": self.sha("feature-b")})
         self.assertNotEqual(self.sha("env/qa"), built)
         self.assertEqual(self.sha("env/qa^1"), self.sha("master"))
         self.assertEqual(self.sha("env/qa^2"), self.sha("feature-b"))
