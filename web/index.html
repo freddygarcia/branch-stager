@@ -144,7 +144,12 @@
         <label for="base">Base branch (the new branch starts here)</label>
         <select id="base"></select>
       </div>
-      <div style="margin-top:10px">
+      <div id="envBox" style="margin-top:10px" hidden>
+        <label for="envBranch">Environment branch of profile <b id="envProfile"></b></label>
+        <input id="envBranch" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. env/staging (empty: a new branch on every Apply)">
+        <div class="hint" id="envHint"></div>
+      </div>
+      <div id="newNameBox" style="margin-top:10px">
         <label for="newName">New branch name</label>
         <div class="row">
           <input id="newName" type="text" style="flex:1">

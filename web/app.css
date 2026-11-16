@@ -150,7 +150,9 @@ fieldset.field legend { padding: 0; font-size: 12px; color: var(--muted); margin
 .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
 .seg code { font-weight: 400; background: none; padding: 0; color: var(--muted); }
 fieldset:disabled .seg label { cursor: not-allowed; opacity: .6; }
-fieldset.field .hint { font-size: 12.5px; color: var(--muted); margin-top: 5px; }
+fieldset.field .hint, #envHint { font-size: 12.5px; color: var(--muted); margin-top: 5px; }
+#envHint.err { color: var(--err); }
+.ptab .penv { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; opacity: .7; }
 @media (max-width: 420px) { .seg { flex-direction: column; } }
 .legend { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin: 0 3px 0 10px; }
 .mono-box { width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }

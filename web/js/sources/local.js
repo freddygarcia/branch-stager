@@ -19,8 +19,8 @@ async function compare(base, head) {
   return status === 200 ? data : { error: `${status} ${data?.error || ''}`.trim() };
 }
 
-async function apply({ name, base, branches, ff, push, deleteOnFail, log }) {
-  const data = await helperPost('/apply', { name, base, branches, deleteOnFail, push, ff }, 'Apply failed');
+async function apply({ name, base, branches, ff, push, deleteOnFail, rebuild, log }) {
+  const data = await helperPost('/apply', { name, base, branches, deleteOnFail, push, ff, rebuild }, 'Apply failed');
   for (const line of data.log) log(line.text, line.cls);
   return {
     ok: data.ok,

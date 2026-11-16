@@ -16,7 +16,8 @@ const DEFAULTS = {
   hideArchived: true,
   deleteOnFail: true,
   history: [],
-  // saved merges, switched between with Load: [{ name, base, branches, at }]
+  // saved merges, switched between with Load: [{ name, base, branches, at, target }].
+  // `target`: the profile's environment branch, rebuilt in place by Apply ('' = none)
   profiles: [],
   activeProfile: '',
   jiraUrl: '',

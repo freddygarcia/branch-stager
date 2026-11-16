@@ -5,7 +5,7 @@ import { renderAll } from './main.js';
 import { branchUrl } from './sources/github.js';
 import { HISTORY_LIMIT, save, session, state } from './state.js';
 
-/** Record one apply: { name, base, branches, ok, result, source, pushed }. */
+/** Record one apply: { name, base, branches, rebuilt, ok, result, source, pushed }. */
 export function addHistory(entry) {
   state.history = [{ at: Date.now(), ...entry }, ...state.history].slice(0, HISTORY_LIMIT);
   save();
@@ -22,10 +22,12 @@ function reuse(entry) {
 
 /** The new branch: a link when it is on GitHub, else its name tagged "local". */
 function branchCell(entry) {
+  const tag = (text, title) => el('span', { class: 'tag', style: 'margin-left:6px', title }, text);
+  const rebuilt = entry.rebuilt ? tag('rebuilt', 'An environment branch, rebuilt in place') : null;
   if (entry.ok && (entry.source !== 'local' || entry.pushed)) {
-    return el('a', { href: branchUrl(entry.name), target: '_blank', rel: 'noopener' }, entry.name);
+    return [el('a', { href: branchUrl(entry.name), target: '_blank', rel: 'noopener' }, entry.name), rebuilt];
   }
-  return [entry.name, entry.source === 'local' ? el('span', { class: 'tag', style: 'margin-left:6px' }, 'local') : null];
+  return [entry.name, rebuilt, entry.source === 'local' ? tag('local') : null];
 }
 
 export function renderHistory() {

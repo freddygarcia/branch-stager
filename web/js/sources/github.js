@@ -43,7 +43,44 @@ async function fastForward(name, head, log) {
   return true;
 }
 
-async function apply({ name, base, branches, ff, deleteOnFail, log }) {
+/**
+ * Rebuild `name` in place: build on a temporary branch, then move `name` there once every
+ * merge succeeded. `lease` is the tip of `name` seen at the last Reload (null: it did not
+ * exist); `name` is only moved while it is still there, so nobody's push is overwritten.
+ */
+async function rebuild({ name, base, branches, ff, lease, log }) {
+  const tmp = `${name}-rebuild-${Date.now()}`;
+  log(`Rebuild ${name}${lease ? ` (now at ${lease.slice(0, 8)})` : ' (new)'}, on ${tmp} first`);
+  const built = await build({ name: tmp, into: name, base, branches, ff, deleteOnFail: true, log });
+  if (!built.ok) {
+    log(`${name} not changed`, 'warn');
+    return { ...built, where: lease ? 'remote' : null };
+  }
+  const tip = await gh(`/git/ref/heads/${refPath(tmp)}`);
+  const removeTmp = () => gh(`/git/refs/heads/${refPath(tmp)}`, { method: 'DELETE' });
+  const fail = async (why) => {
+    log(`${why}: ${name} not changed`, 'err');
+    await removeTmp();
+    return { ok: false, result: why, pushed: false, where: lease ? 'remote' : null };
+  };
+  if (tip.status !== 200) return fail(`Could not read ${tmp} (${tip.status})`);
+  const sha = tip.data.object.sha;
+  const now = await gh(`/git/ref/heads/${refPath(name)}`);
+  const current = now.status === 200 ? now.data.object.sha : null;
+  if (current !== lease) return fail(`${name} changed on GitHub since the last Reload`);
+  const moved = current
+    ? await gh(`/git/refs/heads/${refPath(name)}`, { method: 'PATCH', body: { sha, force: true } })
+    : await gh('/git/refs', { method: 'POST', body: { ref: `refs/heads/${name}`, sha } });
+  if (![200, 201].includes(moved.status)) return fail(`Could not update ${name} (${moved.status}): ${moved.data?.message || ''}`);
+  log(current ? `${name}: ${current.slice(0, 8)} → ${sha.slice(0, 8)}` : `Created ${name} at ${sha.slice(0, 8)}`, 'ok');
+  await removeTmp();
+  return { ...built, where: 'remote' };
+}
+
+const apply = (run) => (run.rebuild ? rebuild(run) : build(run));
+
+/** Create `name` at the base and merge `branches` into it; merge messages say `into` (default `name`). */
+async function build({ name, into = name, base, branches, ff, deleteOnFail, log }) {
   log(`Base ${base}`);
   const baseRef = await gh(`/git/ref/heads/${refPath(base)}`);
   if (baseRef.status !== 200) throw new Error(`Could not read ${base} (${baseRef.status}): ${baseRef.data?.message || ''}`);
@@ -66,7 +103,7 @@ async function apply({ name, base, branches, ff, deleteOnFail, log }) {
     }
     const res = await gh('/merges', {
       method: 'POST',
-      body: { base: name, head, commit_message: `Merge branch '${head}' into ${name}` },
+      body: { base: name, head, commit_message: `Merge branch '${head}' into ${into}` },
     });
     if (res.status === 201) {
       merged++;

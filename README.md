@@ -55,6 +55,16 @@ A profile saves a merge setup: the selected branches, their order and the base b
 
 Profiles are kept in this browser's localStorage, together with the other settings.
 
+### Environment branches
+
+A profile can name an **environment branch**, for example `env/staging`. With that profile active, the Selected panel shows an **Environment branch** field in place of **New branch name**, and Apply becomes **Rebuild env/staging**: the branch is built again from the base and the selected branches, replacing what it had, instead of a new timestamped branch being created each time.
+
+- The field is saved into the active profile as soon as you leave it; empty means a new branch on every Apply. The tab shows it (`QA → env/qa`).
+- The merges run on a detached temporary worktree. The environment branch only moves once every merge succeeded, so a conflict leaves it exactly as it was.
+- With **Push to origin**, the push uses `--force-with-lease` against the `origin` tip seen at the last Reload. If someone pushed to it since, nothing is overwritten: the push fails and says so. Reload, then rebuild again to replace it.
+- It can't be a protected name (so `env/staging`, not `staging`), the base, or one of the selected branches. In the local clone it can't be checked out in any folder while it is rebuilt.
+- On GitHub, the rebuild happens on a temporary `<name>-rebuild-<time>` branch, which is deleted afterwards. The environment branch is only moved if it is still at the tip seen at the last Reload.
+
 ### Jira panel
 
 The **Jira** panel under Settings lists Jira issues from a JQL query or from one of your saved filters (starred ★ ones first, then the ones you own). Each issue shows the branches whose name contains its key, as a whole token (`ODS-38` doesn't match `ODS-382`). Click that button to add those branches to the selection, or **Select all matching branches** to add the branches of every issue listed. **⌕** filters the branch list by the issue key.

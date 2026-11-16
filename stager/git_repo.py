@@ -150,28 +150,70 @@ class Repo:
             )
         return sorted(items, key=lambda item: item["name"])
 
-    def check_new_branch_name(self, name: str) -> None:
+    def check_new_branch_name(self, name: str, *, may_exist: bool = False) -> None:
+        """Refuse a name Apply must not write: invalid, protected, or (unless `may_exist`) taken."""
         if not self.succeeds("check-ref-format", "--branch", name):
             msg = f'"{name}" is not a valid branch name.'
             raise GitError(msg)
         if PROTECTED.match(name):
             msg = f'"{name}" is a protected branch name. Pick another one.'
             raise GitError(msg)
-        if self.succeeds("show-ref", "--verify", "--quiet", f"refs/heads/{name}"):
+        if not may_exist and self.local_sha(name):
             msg = f'"{name}" already exists. Pick a new name.'
             raise GitError(msg)
 
-    def push_new_branch(self, name: str) -> tuple[bool, str]:
-        """Push a branch this helper just created to the remote and track it."""
+    def local_sha(self, name: str) -> str | None:
+        """Tip of the local branch `name`, None when there is no such branch."""
+        result = self.run(
+            "rev-parse", "--verify", "--quiet", f"refs/heads/{name}^{{commit}}", check=False
+        )
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    def remote_sha(self, name: str) -> str | None:
+        """Tip of `origin/name` as of the last fetch, None when origin has no such branch."""
+        result = self.run(
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            f"refs/remotes/{REMOTE}/{name}^{{commit}}",
+            check=False,
+        )
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    def checked_out_at(self, name: str) -> str | None:
+        """The folder of a worktree (the main checkout included) that has `name` checked out."""
+        folder = None
+        for line in self.out("worktree", "list", "--porcelain").splitlines():
+            if line.startswith("worktree "):
+                folder = line.removeprefix("worktree ")
+            elif line == f"branch refs/heads/{name}":
+                return folder
+        return None
+
+    def push_branch(self, name: str, *, lease: str | None = None) -> tuple[bool, str]:
+        """
+        Push `name` to the remote and track it. With `lease` (the remote tip this helper
+        last saw, "" for none) the push may replace the remote branch, but only while the
+        remote still has that tip (--force-with-lease): a push made by someone else since
+        the last fetch is never overwritten.
+        """
         # never reached: such names are refused before merging
         if PROTECTED.match(name):
             return False, f"{name} is protected, not pushed"
-        result = self.run(
-            "push", "--set-upstream", REMOTE, f"{name}:refs/heads/{name}", check=False
-        )
+        args = ["push", "--set-upstream"]
+        if lease is not None:
+            args.append(f"--force-with-lease=refs/heads/{name}:{lease}")
+        result = self.run(*args, REMOTE, f"{name}:refs/heads/{name}", check=False)
         if result.returncode != 0:
+            if lease is not None and "stale info" in result.stderr:
+                return False, (
+                    f"{REMOTE}/{name} changed since the last Reload (someone pushed to it), "
+                    f"so it was not replaced. Reload to see what is there, then rebuild "
+                    f"again to replace it."
+                )
             return False, (result.stderr or result.stdout).strip() or "git push failed"
-        return True, f"Pushed {name} to {REMOTE}"
+        how = " (replaced)" if lease else ""
+        return True, f"Pushed {name} to {REMOTE}{how}"
 
     def delete_branch(self, name: str) -> None:
         self.run("branch", "-D", name, check=False)

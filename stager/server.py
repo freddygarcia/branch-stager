@@ -150,6 +150,7 @@ def apply(req: Request) -> dict:
             delete_on_fail=bool(req.body.get("deleteOnFail", True)),
             ff=req.body.get("ff") is True,
             push=req.body.get("push") is True,
+            rebuild=req.body.get("rebuild") is True,
         )
 
 

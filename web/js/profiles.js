@@ -8,7 +8,18 @@ import { save, session, state } from './state.js';
 const matches = (p) => p.base === state.base
   && p.branches.length === state.selected.length && p.branches.every((n, i) => n === state.selected[i]);
 
-const activeProfile = () => state.profiles.find((p) => p.name === state.activeProfile);
+export const activeProfile = () => state.profiles.find((p) => p.name === state.activeProfile);
+
+/** The active profile's environment branch, '' when there is none. */
+export const envTarget = () => activeProfile()?.target || '';
+
+/** Set the active profile's environment branch (saved at once: it is not part of the selection). */
+export function setEnvTarget(target) {
+  const p = activeProfile();
+  if (!p || (p.target || '') === target) return;
+  p.target = target;
+  save();
+}
 
 // A second click within 3 s deletes, so a stray click cannot lose a profile.
 // `armed` holds a profile name, or ALL while Delete all waits for its second click.
@@ -26,10 +37,11 @@ function tab(p) {
     role: 'tab',
     ariaSelected: String(isActive),
     disabled: running,
-    title: `${p.base} ← ${p.branches.join(', ')}${dirty ? '\n(unsaved changes)' : ''}`,
+    title: `${p.target ? `${p.target} = ` : ''}${p.base} ← ${p.branches.join(', ')}${dirty ? '\n(unsaved changes)' : ''}`,
     onclick: () => loadProfile(p.name),
   },
     el('span', { class: 'pname' }, p.name),
+    p.target ? el('span', { class: 'penv' }, `→ ${p.target}`) : null,
     el('span', { class: 'pcount' }, String(p.branches.length)),
     dirty ? el('span', { class: 'pdirty', title: 'Unsaved changes' }) : null,
     el('span', {
@@ -61,10 +73,13 @@ export function renderProfiles() {
   tabs.querySelector('.ptab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
-/** Save the current selection and base as profile `name` (overwritten if it exists). */
+/**
+ * Save the current selection and base as profile `name` (overwritten if it exists).
+ * An existing profile keeps its environment branch.
+ */
 function storeProfile(name) {
-  const entry = { name, base: state.base, branches: [...state.selected], at: Date.now() };
   const i = state.profiles.findIndex((p) => p.name === name);
+  const entry = { name, base: state.base, branches: [...state.selected], at: Date.now(), target: state.profiles[i]?.target || '' };
   if (i >= 0) state.profiles[i] = entry;
   else state.profiles = [...state.profiles, entry].sort((a, b) => a.name.localeCompare(b.name));
   state.activeProfile = name;
