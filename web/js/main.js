@@ -30,6 +30,7 @@ function renderSettings() {
   $('hideRemote').checked = state.hideRemote;
   $('staleOnly').checked = state.staleOnly;
   $('staleDays').value = state.staleDays;
+  if (!(Number(state.staleDays) > 0)) $('staleOnlyLabel').hidden = true; // 0 turns stale tags off
   $('settingsSummary').textContent = `— ${src.summary()}`;
   if (!src.ready()) $('settingsBox').open = true;
 }
@@ -94,9 +95,10 @@ function wireSettings() {
   $('prefix').addEventListener('change', (e) => { state.prefix = e.target.value.trim(); save(); });
   $('staleDays').addEventListener('change', (e) => {
     const days = Math.round(Number(e.target.value));
-    state.staleDays = days >= 1 ? days : 15;
+    state.staleDays = days >= 0 ? days : 15; // 0 turns stale tags and the Stale only filter off
     e.target.value = state.staleDays;
     save();
+    renderSettings();
     renderBranches();
     renderSelected();
   });

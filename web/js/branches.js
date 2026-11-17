@@ -43,7 +43,7 @@ export function renderBranches() {
   }
   const q = $('filter').value.trim().toLowerCase();
   const all = listed();
-  const staleOnly = state.staleOnly && source().id === 'local';
+  const staleOnly = state.staleOnly && source().id === 'local' && Number(state.staleDays) > 0;
   const shown = all.filter((name) =>
     (!state.hideArchived || !ARCHIVED.test(name)) && (!state.hideRemote || !isRemote(name)) && (!q || name.toLowerCase().includes(q))
     && (!staleOnly || ageTag(name)));

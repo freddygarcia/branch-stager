@@ -76,7 +76,7 @@
         <div><label for="prefix">Prefix of new names (↻)</label><input id="prefix" type="text"></div>
       </div>
       <div class="row" style="margin-top:12px" data-source="local">
-        <label for="staleDays" style="margin:0" title="A branch whose last commit is older than this is tagged stale">Stale after <input id="staleDays" type="number" min="1" step="1" style="width:64px;padding:3px 6px;margin:0 4px"> days without commits</label>
+        <label for="staleDays" style="margin:0" title="A branch whose last commit is older than this is tagged stale; 0 turns stale tags off">Stale after <input id="staleDays" type="number" min="0" step="1" style="width:64px;padding:3px 6px;margin:0 4px"> days without commits (0 = off)</label>
       </div>
       <div class="row" style="margin-top:12px" data-source="github">
         <span class="spacer"></span>
@@ -181,7 +181,7 @@
         <input id="filter" type="text" placeholder="Filter, e.g. ODS-3821" style="flex:1">
         <label style="margin:0;white-space:nowrap" data-source="local" title="Branches only on origin, with no local branch of the same name"><input id="hideRemote" type="checkbox"> Hide origin/*</label>
         <label style="margin:0;white-space:nowrap"><input id="hideArchived" type="checkbox"> Hide archived/*</label>
-        <label style="margin:0;white-space:nowrap" data-source="local" title="Only branches with no commits in the days set in Settings"><input id="staleOnly" type="checkbox"> Stale only</label>
+        <label id="staleOnlyLabel" style="margin:0;white-space:nowrap" data-source="local" title="Only branches with no commits in the days set in Settings"><input id="staleOnly" type="checkbox"> Stale only</label>
       </div>
       <div class="list" id="branchList"><div class="empty">Add a token in Settings, then Reload.</div></div>
     </section>
