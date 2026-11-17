@@ -109,6 +109,11 @@ export function wireBranches() {
   $('hideArchived').addEventListener('change', (e) => { state.hideArchived = e.target.checked; save(); renderBranches(); });
   $('hideRemote').addEventListener('change', (e) => { state.hideRemote = e.target.checked; save(); renderBranches(); });
   $('staleOnly').addEventListener('change', (e) => { state.staleOnly = e.target.checked; save(); renderBranches(); });
+  $('hideBadges').addEventListener('change', (e) => {
+    state.hideBadges = e.target.checked;
+    save();
+    $('branchList').classList.toggle('no-badges', state.hideBadges);
+  });
   $('filter').addEventListener('input', renderBranches);
   $('base').addEventListener('change', (e) => {
     state.base = e.target.value;

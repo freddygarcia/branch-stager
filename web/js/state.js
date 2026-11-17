@@ -17,6 +17,7 @@ const DEFAULTS = {
   hideRemote: true, // origin/* branches of a local clone (kept as base options)
   staleDays: 15, // a branch whose last commit is older than this many days is stale
   staleOnly: false,
+  hideBadges: false, // the tags and counts beside each branch in the Branches list
   deleteOnFail: true, // sent to the helper; a rebuild never leaves a half-built branch anyway
   target: '', // the branch Apply builds when no profile is active (a profile keeps its own)
   mergeFf: false, // Settings > Build > Merge strategy: fast-forward instead of --no-ff
