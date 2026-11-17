@@ -4,7 +4,7 @@ import { aheadBehind, loadAheadBehind } from './aheadbehind.js';
 import { $, el } from './dom.js';
 import { setSelected } from './selected.js';
 import { ready, source } from './sources/index.js';
-import { ARCHIVED, isProtected, listed, save, session, state } from './state.js';
+import { ARCHIVED, isProtected, isRemote, listed, save, session, state } from './state.js';
 
 /** Tag for a local-clone branch: is it on origin, and in sync? */
 function localTag(name) {
@@ -36,7 +36,7 @@ export function renderBranches() {
   const q = $('filter').value.trim().toLowerCase();
   const all = listed();
   const shown = all.filter((name) =>
-    (!state.hideArchived || !ARCHIVED.test(name)) && (!q || name.toLowerCase().includes(q)));
+    (!state.hideArchived || !ARCHIVED.test(name)) && (!state.hideRemote || !isRemote(name)) && (!q || name.toLowerCase().includes(q)));
   $('branchCount').textContent = `${shown.length} of ${all.length}`;
 
   if (!shown.length) {
@@ -96,6 +96,7 @@ export function renderBase() {
 
 export function wireBranches() {
   $('hideArchived').addEventListener('change', (e) => { state.hideArchived = e.target.checked; save(); renderBranches(); });
+  $('hideRemote').addEventListener('change', (e) => { state.hideRemote = e.target.checked; save(); renderBranches(); });
   $('filter').addEventListener('input', renderBranches);
   $('base').addEventListener('change', (e) => {
     state.base = e.target.value;

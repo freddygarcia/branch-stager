@@ -14,6 +14,7 @@ const DEFAULTS = {
   base: 'master',
   selected: [],
   hideArchived: true,
+  hideRemote: true, // origin/* branches of a local clone (kept as base options)
   deleteOnFail: true,
   history: [],
   // saved merges, switched between with Load: [{ name, base, branches, at, target }].
@@ -64,6 +65,9 @@ export function setBranches(found) {
 }
 
 export const clearBranches = () => setBranches({});
+
+/** An origin/* branch of a local clone (no local branch of that name). */
+export const isRemote = (name) => session.meta[name]?.kind === 'remote';
 
 /** Branches shown with a checkbox: origin/x is hidden when a local x exists. */
 export const listed = () => session.branches.filter((n) => !session.meta[n]?.shadowed);
