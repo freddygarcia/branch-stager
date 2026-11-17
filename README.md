@@ -20,7 +20,7 @@ Python 3 standard library only, and plain JavaScript modules with no build step.
 | `web/index.html`, `web/app.css` | The page's markup and styles. |
 | `web/js/main.js` | Starts the page: Settings, Reload, and wiring every panel. |
 | `web/js/sources/` | What differs between the two sources: `local.js` (the helper) and `github.js` (the GitHub API). |
-| `web/js/*.js` | One module per panel: `branches`, `selected`, `dryrun`, `conflicts`, `apply`, `profiles`, `stale`, `history`, `jira`, `backup`; plus `state` (saved settings), `api` and `dom` helpers. |
+| `web/js/*.js` | One module per panel: `branches`, `selected`, `dryrun`, `conflicts`, `apply`, `profiles`, `stale`, `history`, `jira`, `backup`; plus `state` (saved settings), `api` and `dom` helpers. `layout` arranges the panels for the chosen layout. |
 | `tests/` | Tests for the helper: `python3 -m unittest`. |
 
 ## Usage
@@ -32,6 +32,15 @@ python3 main.py [--port 8765] [--repo /path/to/your/clone]
 ```
 
 Then open <http://127.0.0.1:8765>. Opening `web/index.html` from disk doesn't work: the page needs the helper.
+
+### Layouts
+
+**Settings › Layout** picks how the page looks. Every layout has the same features; it is saved in this browser.
+
+- **Classic**: one page, top to bottom, following the light or dark setting of your system.
+- **Guided**: light, with a navy bar. The branch list and the Jira issues are two tabs of one **Pick branches** panel, next to the **Build plan** (the selection and the Apply controls). A step bar shows where you are: pick, order and check, build. Settings opens as a drawer from the bar.
+
+In Guided, Ctrl+Enter (⌘+Enter on a Mac) presses Apply, and Esc closes Settings.
 
 ### Local clone (recommended)
 

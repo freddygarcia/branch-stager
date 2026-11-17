@@ -9,11 +9,17 @@
   The script is in js/ (ES modules, no build step; main.js starts it), the styles in app.css.
 -->
 <link rel="stylesheet" href="app.css">
+<script>
+  // the layout picked in Settings, set before the first paint so the page doesn't flash
+  try { document.documentElement.dataset.layout = JSON.parse(localStorage.getItem('branchMerger.v1') || '{}').layout || 'classic'; }
+  catch { document.documentElement.dataset.layout = 'classic'; }
+</script>
 <script type="module" src="js/main.js"></script>
 </head>
 <body>
 <header class="topbar" id="profileBar" aria-label="Merge profiles">
   <div class="topbar-inner">
+    <span class="brand layout-only" id="brand"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.3 7l7.4 4M8.3 17l7.4-4"/></svg>Branch Merger</span>
     <span class="topbar-label">Profiles</span>
     <nav class="ptabs" id="profileTabs" role="tablist"></nav>
     <form class="psave" id="profileForm" hidden>
@@ -26,6 +32,10 @@
       <button id="profileSaveAs" title="Save the current selection, order and base as a new profile">Save as…</button>
       <button id="profileDeleteAll" class="pdanger" title="Delete every saved profile">Delete all</button>
     </div>
+    <nav class="appnav layout-only" id="appNav" aria-label="Pages">
+      <button type="button" id="historyBtn">History</button>
+      <button type="button" id="settingsBtn" aria-controls="settingsPanel" aria-expanded="false">Settings</button>
+    </nav>
   </div>
 </header>
 <main>
@@ -36,10 +46,22 @@
   <p class="panel err" id="needsHelper">Branch Merger runs through its local helper: start <code>python3 main.py</code> and open <a href="http://127.0.0.1:8765">http://127.0.0.1:8765</a>.</p>
   <p class="panel err" id="helperDown" hidden></p>
 
-  <section class="panel">
+  <section class="panel" id="settingsPanel" aria-label="Settings">
+    <div class="drawer-head layout-only">
+      <h2>Settings</h2>
+      <span class="spacer"></span>
+      <button type="button" id="settingsClose" class="icon" aria-label="Close settings (Esc)">×</button>
+    </div>
     <details id="settingsBox">
       <summary><b>Settings</b> <span class="muted" id="settingsSummary"></span></summary>
       <div class="grid" style="margin-top:12px">
+        <div>
+          <label for="layout">Layout</label>
+          <select id="layout">
+            <option value="classic">Classic</option>
+            <option value="guided">Guided (light, two panels)</option>
+          </select>
+        </div>
         <div>
           <label for="source">Source</label>
           <select id="source">
@@ -96,6 +118,12 @@
     </details>
   </section>
 
+  <ol class="steps layout-only" id="steps" aria-label="Progress">
+    <li data-step="1"><span>1</span>Pick branches</li>
+    <li data-step="2"><span>2</span>Order and check</li>
+    <li data-step="3"><span>3</span>Build</li>
+  </ol>
+
   <section class="panel" id="jiraBox">
     <details id="jiraDetails">
       <summary><b>Jira</b> <span class="muted" id="jiraSummary"></span></summary>
@@ -117,7 +145,18 @@
   </section>
 
   <div class="cols">
-    <section class="panel">
+    <section class="panel layout-only" id="pickPanel" aria-labelledby="pickTitle">
+      <div class="row pick-head">
+        <h2 id="pickTitle">Pick branches</h2>
+        <div class="tabs" role="tablist" aria-label="Branch source">
+          <button type="button" role="tab" id="tabBranches" aria-controls="pickBody">All branches</button>
+          <button type="button" role="tab" id="tabJira" aria-controls="pickBody">Jira issues</button>
+        </div>
+      </div>
+      <div id="pickBody"></div>
+    </section>
+
+    <section class="panel" id="branchesPanel">
       <div class="row" style="margin-bottom:10px">
         <h2 style="margin:0">Branches</h2>
         <span class="muted" id="branchCount"></span>
@@ -132,8 +171,8 @@
       <div class="list" id="branchList"><div class="empty">Add a token in Settings, then Reload.</div></div>
     </section>
 
-    <section class="panel">
-      <h2>Selected <span class="muted" style="font-weight:400">(merge order)</span></h2>
+    <section class="panel" id="selectedPanel">
+      <h2><span id="selectedTitle">Selected</span> <span class="muted" style="font-weight:400" id="selectedSub">(merge order)</span></h2>
       <div class="list" id="selectedList"></div>
       <div class="row" style="margin-top:8px">
         <button id="clearSel">Clear</button>
@@ -142,23 +181,24 @@
       </div>
       <div id="staleNote" hidden></div>
 
-      <div style="margin-top:16px">
+      <div id="buildControls">
+      <div id="baseBox">
         <label for="base">Base branch (the new branch starts here)</label>
         <select id="base"></select>
       </div>
-      <div id="envBox" style="margin-top:10px" hidden>
+      <div id="envBox" hidden>
         <label for="envBranch">Environment branch of profile <b id="envProfile"></b></label>
         <input id="envBranch" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. env/staging (empty: a new branch on every Apply)">
         <div class="hint" id="envHint"></div>
       </div>
-      <div id="newNameBox" style="margin-top:10px">
+      <div id="newNameBox">
         <label for="newName">New branch name</label>
         <div class="row">
           <input id="newName" type="text" style="flex:1">
           <button id="renew" class="icon" title="New timestamped name">↻</button>
         </div>
       </div>
-      <fieldset id="mergeMode" class="field" style="margin-top:10px">
+      <fieldset id="mergeMode" class="field">
         <legend>Merge strategy</legend>
         <div class="seg" role="radiogroup" aria-describedby="mergeHint">
           <label><input type="radio" name="mergeMode" value="no-ff" checked><span>Merge commit <code>--no-ff</code></span></label>
@@ -166,12 +206,14 @@
         </div>
         <div id="mergeHint" class="hint"></div>
       </fieldset>
-      <div class="row" style="margin-top:14px">
+      <div class="row" id="applyRow">
         <span class="spacer"></span>
         <label id="pushBox" hidden style="margin:0;font-size:14px;color:var(--text);white-space:nowrap" title="After all merges succeed, push the new branch to origin (git push --set-upstream). Off by default on every page load.">
           <input id="pushNew" type="checkbox"> Push to origin
         </label>
         <button id="apply" class="primary">Apply</button>
+        <kbd class="kbd layout-only" id="applyKbd" title="Keyboard shortcut for Apply">Ctrl Enter</kbd>
+      </div>
       </div>
     </section>
   </div>
@@ -207,6 +249,7 @@
     </details>
   </section>
 </main>
+<div class="scrim" id="scrim" hidden></div>
 
 </body>
 </html>

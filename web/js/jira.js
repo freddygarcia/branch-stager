@@ -5,6 +5,7 @@
 import { filterBranches } from './branches.js';
 import { $, count, el } from './dom.js';
 import { helperPost } from './api.js';
+import { jiraAlwaysOpen } from './layout.js';
 import { setSelected } from './selected.js';
 import { ARCHIVED, isProtected, listed, save, session, state } from './state.js';
 
@@ -105,7 +106,7 @@ function issueRow(issue) {
 export function renderJira() {
   const list = $('jiraList');
   const summary = $('jiraSummary');
-  $('jiraDetails').open = state.jiraOpen;
+  $('jiraDetails').open = state.jiraOpen || jiraAlwaysOpen();
   for (const id of ['jiraFilter', 'jql', 'jiraRun']) $(id).disabled = Boolean(jira.setup);
   $('jiraRun').disabled ||= jira.loading;
   $('jiraMore').hidden = !jira.next;
@@ -146,7 +147,8 @@ export function wireJira() {
     $(id).addEventListener('change', (e) => { state[id] = e.target.value.trim(); changed(); });
   }
   $('forgetJiraToken').addEventListener('click', () => { state.jiraToken = ''; $('jiraToken').value = ''; changed(); });
-  $('jiraDetails').addEventListener('toggle', (e) => { state.jiraOpen = e.target.open; save(); });
+  // opened by the Guided layout is not the user's choice: not saved
+  $('jiraDetails').addEventListener('toggle', (e) => { if (!jiraAlwaysOpen()) { state.jiraOpen = e.target.open; save(); } });
   $('jiraFilter').addEventListener('change', (e) => {
     state.jiraFilter = e.target.value;
     const f = jira.filters.find((x) => x.id === state.jiraFilter);

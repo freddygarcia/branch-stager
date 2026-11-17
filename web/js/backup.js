@@ -3,6 +3,7 @@
 
 import { saveCompares } from './aheadbehind.js';
 import { $, count, el } from './dom.js';
+import { showSettings } from './layout.js';
 import { KEY, PREFIX, save, session, state } from './state.js';
 
 const BACKUP_FORMAT = 'branch-merger-backup';
@@ -109,7 +110,7 @@ export function showImportedNote() {
     const note = sessionStorage.getItem(IMPORTED_NOTE);
     if (!note) return;
     sessionStorage.removeItem(IMPORTED_NOTE);
-    $('settingsBox').open = true;
+    showSettings();
     status(note, 'ok');
   } catch { /* note only */ }
 }

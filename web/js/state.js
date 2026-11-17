@@ -26,6 +26,8 @@ const DEFAULTS = {
   jiraUrl: '',
   jiraEmail: '',
   jiraToken: '',
+  layout: 'classic', // Settings > Layout: classic or guided (layout.js)
+  pickTab: 'branches', // Guided: the picker tab shown, 'branches' or 'jira'
   jql: '',
   jiraFilter: '',
   jiraOpen: true,
