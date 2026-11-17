@@ -1,5 +1,5 @@
 // The Jira panel: issues from a JQL query or a saved filter, each with the branches whose
-// name contains its key. Jira does not accept calls from other sites' pages, so the helper
+// name contains its key; issues that have a branch are listed first. Jira does not accept calls from other sites' pages, so the helper
 // calls it for the page. Results are not saved.
 
 import { filterBranches } from './branches.js';
@@ -129,7 +129,9 @@ export function renderJira() {
     : `${issues} · Reload branches to match them`;
   $('jiraSelectAll').hidden = !matched;
   $('jiraSelectAll').disabled = session.running;
-  list.replaceChildren(...jira.issues.map(issueRow));
+  // issues with a branch first; the sort is stable, so Jira's order holds within each group
+  const withBranch = (i) => (branchesFor(i.key).length ? 0 : 1);
+  list.replaceChildren(...[...jira.issues].sort((a, b) => withBranch(a) - withBranch(b)).map(issueRow));
 }
 
 export function wireJira() {
