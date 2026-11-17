@@ -27,6 +27,8 @@ function renderSettings() {
   $('deleteOnFail').checked = state.deleteOnFail;
   $('hideArchived').checked = state.hideArchived;
   $('hideRemote').checked = state.hideRemote;
+  $('staleOnly').checked = state.staleOnly;
+  $('staleDays').value = state.staleDays;
   $('settingsSummary').textContent = `— ${src.summary()}`;
   if (!src.ready()) $('settingsBox').open = true;
 }
@@ -89,6 +91,14 @@ function wireSettings() {
   });
   $('forgetToken').addEventListener('click', () => { state.token = ''; save(); clearBranches(); renderAll(); });
   $('prefix').addEventListener('change', (e) => { state.prefix = e.target.value.trim(); save(); renewName(); });
+  $('staleDays').addEventListener('change', (e) => {
+    const days = Math.round(Number(e.target.value));
+    state.staleDays = days >= 1 ? days : 15;
+    e.target.value = state.staleDays;
+    save();
+    renderBranches();
+    renderSelected();
+  });
   $('deleteOnFail').addEventListener('change', (e) => { state.deleteOnFail = e.target.checked; save(); });
   $('reload').addEventListener('click', reload);
 }

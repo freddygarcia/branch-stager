@@ -15,6 +15,8 @@ const DEFAULTS = {
   selected: [],
   hideArchived: true,
   hideRemote: true, // origin/* branches of a local clone (kept as base options)
+  staleDays: 15, // a branch whose last commit is older than this many days is stale
+  staleOnly: false,
   deleteOnFail: true,
   history: [],
   historyOpen: true,
@@ -66,6 +68,20 @@ export function setBranches(found) {
 }
 
 export const clearBranches = () => setBranches({});
+
+const DAY = 86400;
+
+/**
+ * Days since the last commit of `name` when it is older than Settings > Stale after,
+ * else null. Only the local clone knows commit dates; GitHub's branch list has none.
+ */
+export function staleAge(name) {
+  const date = session.meta[name]?.date;
+  const limit = Number(state.staleDays);
+  if (!date || !(limit > 0)) return null;
+  const days = Math.floor((Date.now() / 1000 - date) / DAY);
+  return days > limit ? days : null;
+}
 
 /** An origin/* branch of a local clone (no local branch of that name). */
 export const isRemote = (name) => session.meta[name]?.kind === 'remote';

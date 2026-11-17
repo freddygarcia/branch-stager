@@ -104,18 +104,21 @@ class Repo:
         """
         Local branches and the remote's branches. A remote branch with a local branch of the
         same name is `shadowed`: the page lists the local one (with how it compares to the
-        remote) and offers the remote one only as a base.
+        remote) and offers the remote one only as a base. `date` is the tip's committer date
+        (Unix seconds), for telling stale branches.
         """
         lines = self.out(
             "for-each-ref",
-            "--format=%(refname)%00%(objectname)",
+            "--format=%(refname)%00%(objectname)%00%(committerdate:unix)",
             "refs/heads",
             f"refs/remotes/{REMOTE}",
         ).splitlines()
         local: dict[str, str] = {}
         remote: dict[str, str] = {}
+        dates: dict[str, int | None] = {}
         for line in lines:
-            ref, sha = line.split("\0")
+            ref, sha, date = line.split("\0")
+            dates[sha] = int(date) if date.isdigit() else None
             if ref.startswith("refs/heads/"):
                 local[ref.removeprefix("refs/heads/")] = sha
             elif ref != f"refs/remotes/{REMOTE}/HEAD":
@@ -133,6 +136,7 @@ class Repo:
                 {
                     "name": name,
                     "sha": sha,
+                    "date": dates[sha],
                     "kind": "local",
                     "remote": on_remote,
                     "shadowed": False,
@@ -143,6 +147,7 @@ class Repo:
                 {
                     "name": f"{REMOTE}/{name}",
                     "sha": sha,
+                    "date": dates[sha],
                     "kind": "remote",
                     "remote": None,
                     "shadowed": name in local,

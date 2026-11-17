@@ -4,7 +4,7 @@ import { aheadBehind, loadAheadBehind } from './aheadbehind.js';
 import { $, el } from './dom.js';
 import { setSelected } from './selected.js';
 import { ready, source } from './sources/index.js';
-import { ARCHIVED, isProtected, isRemote, listed, save, session, state } from './state.js';
+import { ARCHIVED, isProtected, isRemote, listed, save, session, staleAge, state } from './state.js';
 
 /** Tag for a local-clone branch: is it on origin, and in sync? */
 function localTag(name) {
@@ -16,6 +16,20 @@ function localTag(name) {
   if (ahead) return el('span', { class: 'tag warn', title: `${ahead} commit(s) not pushed to origin` }, `unpushed ↑${ahead}`);
   if (behind) return el('span', { class: 'tag', title: `origin has ${behind} commit(s) not in this local branch` }, `behind origin ↓${behind}`);
   return null;
+}
+
+/** Why `name` is stale (no commits in Settings > Stale after days), else null. */
+function staleNote(name) {
+  const days = name === state.base || isProtected(name) ? null : staleAge(name);
+  if (days === null) return null;
+  const last = new Date(session.meta[name].date * 1000).toLocaleDateString();
+  return { days, title: `Stale: no commits for ${days} days (last ${last}); stale after ${state.staleDays}` };
+}
+
+/** Tag for a stale branch, used in the Selected list. The Branches list dims the name instead. */
+export function ageTag(name) {
+  const s = staleNote(name);
+  return s && el('span', { class: 'tag warn', title: s.title }, `stale ${s.days}d`);
 }
 
 function toggle(name, on) {
@@ -35,8 +49,10 @@ export function renderBranches() {
   }
   const q = $('filter').value.trim().toLowerCase();
   const all = listed();
+  const staleOnly = state.staleOnly && source().id === 'local';
   const shown = all.filter((name) =>
-    (!state.hideArchived || !ARCHIVED.test(name)) && (!state.hideRemote || !isRemote(name)) && (!q || name.toLowerCase().includes(q)));
+    (!state.hideArchived || !ARCHIVED.test(name)) && (!state.hideRemote || !isRemote(name)) && (!q || name.toLowerCase().includes(q))
+    && (!staleOnly || staleNote(name)));
   $('branchCount').textContent = `${shown.length} of ${all.length}`;
 
   if (!shown.length) {
@@ -46,7 +62,8 @@ export function renderBranches() {
   for (const name of shown) {
     const isBase = name === state.base;
     const id = `b-${name}`;
-    list.append(el('div', { class: `item${isBase ? ' disabled' : ''}` },
+    const stale = staleNote(name);
+    list.append(el('div', { class: `item${isBase ? ' disabled' : ''}${stale ? ' stale' : ''}`, title: stale?.title || '' },
       el('label', { htmlFor: id },
         el('input', {
           type: 'checkbox', id, checked: state.selected.includes(name), disabled: isBase,
@@ -97,6 +114,7 @@ export function renderBase() {
 export function wireBranches() {
   $('hideArchived').addEventListener('change', (e) => { state.hideArchived = e.target.checked; save(); renderBranches(); });
   $('hideRemote').addEventListener('change', (e) => { state.hideRemote = e.target.checked; save(); renderBranches(); });
+  $('staleOnly').addEventListener('change', (e) => { state.staleOnly = e.target.checked; save(); renderBranches(); });
   $('filter').addEventListener('input', renderBranches);
   $('base').addEventListener('change', (e) => {
     state.base = e.target.value;

@@ -52,6 +52,7 @@
         <div data-source="github"><label for="repo">Repository</label><input id="repo" type="text"></div>
         <div data-source="github"><label for="token">GitHub token (stored in this browser)</label><input id="token" type="password" autocomplete="off" placeholder="github_pat_…"></div>
         <div><label for="prefix">New branch prefix</label><input id="prefix" type="text"></div>
+        <div data-source="local"><label for="staleDays" title="A branch whose last commit is older than this is tagged stale">Stale after (days without commits)</label><input id="staleDays" type="number" min="1" step="1"></div>
       </div>
       <div class="row" style="margin-top:12px">
         <label style="margin:0"><input id="deleteOnFail" type="checkbox"> Delete the new branch when a merge conflicts</label>
@@ -128,6 +129,7 @@
         <input id="filter" type="text" placeholder="Filter, e.g. ODS-3821" style="flex:1">
         <label style="margin:0;white-space:nowrap" data-source="local" title="Branches only on origin, with no local branch of the same name"><input id="hideRemote" type="checkbox"> Hide origin/*</label>
         <label style="margin:0;white-space:nowrap"><input id="hideArchived" type="checkbox"> Hide archived/*</label>
+        <label style="margin:0;white-space:nowrap" data-source="local" title="Only branches with no commits in the days set in Settings"><input id="staleOnly" type="checkbox"> Stale only</label>
       </div>
       <div class="list" id="branchList"><div class="empty">Add a token in Settings, then Reload.</div></div>
     </section>
