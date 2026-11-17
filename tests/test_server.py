@@ -96,6 +96,8 @@ class RouteTest(ServerTestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body["repo"], str(self.path))
         self.assertIn("feature-a", [b["name"] for b in body["branches"]])
+        dates = [b["date"] for b in body["branches"]]
+        self.assertTrue(all(isinstance(d, int) and d > 0 for d in dates), dates)
 
     def test_missing_repo(self):
         status, body = self.request("GET", "/api/branches", repo=False)

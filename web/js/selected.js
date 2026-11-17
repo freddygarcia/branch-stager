@@ -1,7 +1,7 @@
 // The Selected panel: the branches to merge, in merge order (drag, or ↑/↓ on a grip).
 
 import { renderApplyControls } from './apply.js';
-import { renderBranches } from './branches.js';
+import { ageTag, renderBranches } from './branches.js';
 import { renderConflicts } from './conflicts.js';
 import { $, el } from './dom.js';
 import { dryBadge, renderDrySummary, scheduleDryRun } from './dryrun.js';
@@ -107,6 +107,7 @@ function row(name, i) {
     el('span', { class: 'muted', style: 'width:20px' }, String(i + 1)),
     el('span', { style: 'flex:1;', title: name }, name.length > MAX_NAME ? `${name.slice(0, MAX_NAME)}…` : name),
     missing ? null : staleTag(name),
+    missing ? null : ageTag(name),
     missing ? el('span', { class: 'tag warn', title: source().missingText }, 'missing') : dryBadge(name, i),
     el('button', { class: 'icon', title: 'Remove', onclick: () => setSelected(state.selected.filter((n) => n !== name)) }, '×'),
   );
