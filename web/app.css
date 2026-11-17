@@ -245,6 +245,8 @@ html[data-drawer=settings] #settingsPanel, html[data-drawer=history] #historyBox
 [data-layout=guided] #pickBody > .tab-off { display: none; }
 [data-layout=guided] #jiraDetails > summary { display: none; }
 [data-layout=guided] #jiraBody { margin-top: 0 !important; }
+/* the tab is narrow: the assignee crowds out the summary */
+[data-layout=guided] .jira-who { display: none; }
 [data-layout=guided] #branchesPanel h2 { display: none; }
 [data-layout=guided] #branchList, [data-layout=guided] #jiraList { max-height: 60vh; }
 [data-layout=guided] #selectedList { max-height: 50vh; }
