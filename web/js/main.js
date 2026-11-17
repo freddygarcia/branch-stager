@@ -26,6 +26,7 @@ function renderSettings() {
   }
   $('deleteOnFail').checked = state.deleteOnFail;
   $('hideArchived').checked = state.hideArchived;
+  $('hideRemote').checked = state.hideRemote;
   $('settingsSummary').textContent = `— ${src.summary()}`;
   if (!src.ready()) $('settingsBox').open = true;
 }
