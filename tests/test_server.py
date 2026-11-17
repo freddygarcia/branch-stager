@@ -143,6 +143,16 @@ class RouteTest(ServerTestCase):
         status, _ = self.request("POST", "/api/apply", {"name": "x", "branches": []})
         self.assertEqual(status, 400)
 
+    def test_apply_rebuild(self):
+        body = {"name": "env/qa", "base": "master", "branches": ["feature-a"], "rebuild": True}
+        for _ in range(2):  # the second time the branch exists, and is replaced
+            status, data = self.request("POST", "/api/apply", body)
+            self.assertEqual(status, 200, data)
+            self.assertTrue(data["ok"])
+        status, data = self.request("POST", "/api/apply", {**body, "rebuild": False})
+        self.assertEqual(status, 422)
+        self.assertIn("already exists", data["error"])
+
     def test_invalid_json(self):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
         self.addCleanup(conn.close)

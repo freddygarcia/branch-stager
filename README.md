@@ -20,7 +20,7 @@ Python 3 standard library only, and plain JavaScript modules with no build step.
 | `web/index.html`, `web/app.css` | The page's markup and styles. |
 | `web/js/main.js` | Starts the page: Settings, Reload, and wiring every panel. |
 | `web/js/sources/` | What differs between the two sources: `local.js` (the helper) and `github.js` (the GitHub API). |
-| `web/js/*.js` | One module per panel: `branches`, `selected`, `dryrun`, `conflicts`, `apply`, `profiles`, `history`, `jira`, `backup`; plus `state` (saved settings), `api` and `dom` helpers. |
+| `web/js/*.js` | One module per panel: `branches`, `selected`, `dryrun`, `conflicts`, `apply`, `profiles`, `stale`, `history`, `jira`, `backup`; plus `state` (saved settings), `api` and `dom` helpers. |
 | `tests/` | Tests for the helper: `python3 -m unittest`. |
 
 ## Usage
@@ -54,6 +54,25 @@ A profile saves a merge setup: the selected branches, their order and the base b
 - **Delete all**: click **Delete all**, then click it again (it now reads **Delete N?**) within 3 seconds.
 
 Profiles are kept in this browser's localStorage, together with the other settings.
+
+### Environment branches
+
+A profile can name an **environment branch**, for example `env/staging`. With that profile active, the Selected panel shows an **Environment branch** field in place of **New branch name**, and Apply becomes **Rebuild env/staging**: the branch is built again from the base and the selected branches, replacing what it had, instead of a new timestamped branch being created each time.
+
+- The field is saved into the active profile as soon as you leave it; empty means a new branch on every Apply. The tab shows it (`QA → env/qa`).
+- The merges run on a detached temporary worktree. The environment branch only moves once every merge succeeded, so a conflict leaves it exactly as it was.
+- The last commit of a rebuild is an empty one that describes it: the base and every branch, with the commit each was at, as git trailers (`Branch-Merger-Base`, `Branch-Merger-Branch`, `Branch-Merger-Profile`). Anyone can see what an environment has with `git log -1 origin/env/staging`, or list its branches with `git log -1 --format='%(trailers:key=Branch-Merger-Branch,valueonly)' origin/env/staging`.
+- With **Push to origin**, the push uses `--force-with-lease` against the `origin` tip seen at the last Reload. If someone pushed to it since, nothing is overwritten: the push fails and says so. Reload, then rebuild again to replace it.
+- It can't be a protected name (so `env/staging`, not `staging`), the base, or one of the selected branches. In the local clone it can't be checked out in any folder while it is rebuilt.
+- On GitHub, the rebuild happens on a temporary `<name>-rebuild-<time>` branch, which is deleted afterwards. The environment branch is only moved if it is still at the tip seen at the last Reload.
+
+### What changed since the last build
+
+Every successful Apply records, on the active profile, the exact commits it merged (base and branches). After each Reload the page compares them with the branches' current tips:
+
+- In the Selected list, a branch gets **+4** (4 new commits since the build), **rewritten** (its history was force-pushed) or **not built** (added since). A local branch that is behind its `origin` copy gets **↓3 origin**: a rebuild merges the local copy, so pull it first.
+- A note under the list sums it up, including a base branch that moved and branches removed from the selection, or says nothing changed.
+- Each profile tab shows **↻N** when N things changed since that profile's last build (compared with its saved setup), so you can see which environments need a rebuild without opening them.
 
 ### Jira panel
 

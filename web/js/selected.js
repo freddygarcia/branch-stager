@@ -8,6 +8,7 @@ import { dryBadge, renderDrySummary, scheduleDryRun } from './dryrun.js';
 import { renderJira } from './jira.js';
 import { renderProfiles } from './profiles.js';
 import { source } from './sources/index.js';
+import { renderStale, staleTag } from './stale.js';
 import { save, session, state } from './state.js';
 
 /** Replace the selection, save it and redraw both branch lists. */
@@ -105,6 +106,7 @@ function row(name, i) {
     }, '⋮⋮'),
     el('span', { class: 'muted', style: 'width:20px' }, String(i + 1)),
     el('span', { style: 'flex:1;', title: name }, name.length > MAX_NAME ? `${name.slice(0, MAX_NAME)}…` : name),
+    missing ? null : staleTag(name),
     missing ? el('span', { class: 'tag warn', title: source().missingText }, 'missing') : dryBadge(name, i),
     el('button', { class: 'icon', title: 'Remove', onclick: () => setSelected(state.selected.filter((n) => n !== name)) }, '×'),
   );
@@ -123,6 +125,7 @@ export function renderSelected() {
   if (focused) [...list.querySelectorAll('.grip')].find((g) => g.dataset.name === focused)?.focus();
 
   renderDrySummary();
+  renderStale(renderSelected);
   renderConflicts();
   renderApplyControls();
   renderProfiles(); // the unsaved-changes dot follows the selection and base

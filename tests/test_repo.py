@@ -110,6 +110,19 @@ class MergeTest(GitTestCase):
         merges = self.git("rev-list", "--merges", "master..integration/x").split()
         self.assertEqual(len(merges), 2)
 
+    def test_reports_the_commits_merged(self):
+        result = merge.merge_into_new_branch(
+            Repo(self.path),
+            "integration/x", "master", ["feature-a", "old"], delete_on_fail=True
+        )
+        self.assertEqual(
+            result["built"],
+            {
+                "base": self.sha("master"),
+                "heads": {"feature-a": self.sha("feature-a"), "old": self.sha("old")},
+            },
+        )
+
     def test_fast_forward(self):
         result = merge.merge_into_new_branch(
             Repo(self.path),
@@ -150,6 +163,108 @@ class MergeTest(GitTestCase):
                 merge.merge_into_new_branch(
                     repo, name, "master", ["feature-b"], delete_on_fail=True
                 )
+
+
+class RebuildTest(GitTestCase):
+    def test_creates_then_replaces(self):
+        repo = Repo(self.path)
+        first = merge.rebuild_branch(repo, "env/qa", "master", ["feature-a"])
+        self.assertTrue(first["ok"])
+        built = self.sha("env/qa")
+        # the tip is the empty commit describing the build; the merge is under it
+        self.assertEqual(self.sha("env/qa~1^2"), self.sha("feature-a"))
+        # rebuilt from scratch: feature-a is gone, feature-b is in
+        second = merge.rebuild_branch(repo, "env/qa", "master", ["feature-b"])
+        self.assertTrue(second["ok"])
+        self.assertEqual(second["built"]["heads"], {"feature-b": self.sha("feature-b")})
+        self.assertNotEqual(self.sha("env/qa"), built)
+        self.assertEqual(self.sha("env/qa~1^1"), self.sha("master"))
+        self.assertEqual(self.sha("env/qa~1^2"), self.sha("feature-b"))
+        self.assertEqual(self.git("branch", "--show-current"), "master")
+        self.assertEqual(self.git("worktree", "list").count("\n"), 0)
+
+    def test_describes_itself(self):
+        merge.rebuild_branch(
+            Repo(self.path), "env/qa", "master", ["feature-a", "old"], profile="QA"
+        )
+        # an empty commit: same tree as the merge under it
+        self.assertEqual(self.sha("env/qa^{tree}"), self.sha("env/qa~1^{tree}"))
+        self.assertEqual(
+            self.git("log", "-1", "--format=%s", "env/qa"),
+            "Build env/qa: master + 2 branches",
+        )
+        trailer = "--format=%(trailers:key=Branch-Merger-{},valueonly)"
+        read = lambda key: self.git("log", "-1", trailer.format(key), "env/qa")  # noqa: E731
+        self.assertEqual(read("Base"), f"master {self.sha('master')}")
+        self.assertEqual(
+            read("Branch").splitlines(),
+            [f"feature-a {self.sha('feature-a')}", f"old {self.sha('old')}"],
+        )
+        self.assertEqual(read("Profile"), "QA")
+
+    def test_conflict_leaves_the_branch(self):
+        repo = Repo(self.path)
+        merge.rebuild_branch(repo, "env/qa", "master", ["feature-b"])
+        before = self.sha("env/qa")
+        result = merge.rebuild_branch(repo, "env/qa", "master", ["feature-a", "clash"])
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["created"])  # it still exists, unchanged
+        self.assertEqual(self.sha("env/qa"), before)
+
+    def test_conflict_on_a_new_branch_creates_nothing(self):
+        result = merge.rebuild_branch(
+            Repo(self.path), "env/qa", "master", ["feature-a", "clash"]
+        )
+        self.assertFalse(result["created"])
+        self.assertEqual(self.git("branch", "--list", "env/qa"), "")
+
+    def test_checked_out_branch_refused(self):
+        self.git("branch", "env/qa", "master")
+        self.git("checkout", "--quiet", "env/qa")
+        with self.assertRaisesRegex(GitError, "checked out"):
+            merge.rebuild_branch(Repo(self.path), "env/qa", "master", ["feature-a"])
+
+    def test_protected_refused(self):
+        with self.assertRaisesRegex(GitError, "protected"):
+            merge.rebuild_branch(Repo(self.path), "staging", "master", ["feature-a"])
+
+
+class RebuildPushTest(GitTestCase):
+    """Rebuild and push to a bare origin, then again after someone else pushed."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.origin = self.path.parent / "origin.git"
+        self.git("init", "--quiet", "--bare", str(self.origin))
+        self.git("remote", "add", "origin", str(self.origin))
+
+    def origin_sha(self, name: str) -> str:
+        return self.git("--git-dir", str(self.origin), "rev-parse", name)
+
+    def rebuild(self, *heads: str) -> dict:
+        return merge.apply(
+            Repo(self.path), "env/qa", "master", list(heads),
+            delete_on_fail=True, push=True, rebuild=True,
+        )
+
+    def test_force_with_lease(self):
+        self.assertTrue(self.rebuild("feature-a")["pushed"])
+        self.assertEqual(self.origin_sha("env/qa"), self.sha("env/qa"))
+
+        # a rebuild replaces what it pushed before
+        result = self.rebuild("feature-b")
+        self.assertTrue(result["pushed"], result["log"])
+        self.assertEqual(self.origin_sha("env/qa"), self.sha("env/qa"))
+
+        # someone else pushes to env/qa, and this clone hasn't fetched it: not overwritten
+        tree = self.git("rev-parse", "env/qa^{tree}")
+        other = self.git("commit-tree", "-p", self.sha("env/qa"), "-m", "other", tree)
+        self.git("push", "--quiet", str(self.origin), f"{other}:refs/heads/env/qa")
+        result = self.rebuild("feature-a")
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["pushed"])
+        self.assertIn("changed since the last Reload", result["log"][-1]["text"])
+        self.assertEqual(self.origin_sha("env/qa"), other)
 
 
 if __name__ == "__main__":
