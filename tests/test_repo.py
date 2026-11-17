@@ -226,7 +226,7 @@ class RebuildTest(GitTestCase):
 
     def test_protected_refused(self):
         with self.assertRaisesRegex(GitError, "protected"):
-            merge.rebuild_branch(Repo(self.path), "staging", "master", ["feature-a"])
+            merge.rebuild_branch(Repo(self.path), "release/1.0", "master", ["feature-a"])
 
 
 class RebuildPushTest(GitTestCase):

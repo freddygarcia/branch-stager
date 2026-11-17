@@ -16,7 +16,7 @@ STATIC_TYPES = {
 }
 REMOTE = "origin"
 # branches that must never be the new branch (the page gets this pattern from /api/info)
-PROTECTED = re.compile(r"^(master|main|staging|development|release/.*|hotfix/.*)$")
+PROTECTED = re.compile(r"^(master|main|release/.*|hotfix/.*)$")
 SHA = re.compile(r"^[0-9a-f]{7,40}$")
 API_HEADER = "X-Branch-Merger"
 # the repository folder of an API request, URI-encoded (a header value must be ASCII)
