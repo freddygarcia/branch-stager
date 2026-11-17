@@ -47,6 +47,9 @@ export function renderBranches() {
   const shown = all.filter((name) =>
     (!state.hideArchived || !ARCHIVED.test(name)) && (!state.hideRemote || !isRemote(name)) && (!q || name.toLowerCase().includes(q))
     && (!staleOnly || ageTag(name)));
+  // newest commit first; branches with no known date (GitHub) keep their name order, last
+  const date = (name) => session.meta[name]?.date || 0;
+  shown.sort((a, b) => date(b) - date(a));
   $('branchCount').textContent = `${shown.length} of ${all.length}`;
 
   if (!shown.length) {
