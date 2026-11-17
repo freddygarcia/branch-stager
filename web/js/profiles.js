@@ -11,14 +11,17 @@ const matches = (p) => p.base === state.base
 
 export const activeProfile = () => state.profiles.find((p) => p.name === state.activeProfile);
 
-/** The active profile's environment branch, '' when there is none. */
-export const envTarget = () => activeProfile()?.target || '';
+/**
+ * The branch Apply builds (and rebuilds in place on later Applies): the active profile's,
+ * else the one typed with no profile active. '' when there is none.
+ */
+export const envTarget = () => activeProfile()?.target || state.target || '';
 
-/** Set the active profile's environment branch (saved at once: it is not part of the selection). */
+/** Set the target branch, on the active profile if there is one (saved at once: it is not part of the selection). */
 export function setEnvTarget(target) {
   const p = activeProfile();
-  if (!p || (p.target || '') === target) return;
-  p.target = target;
+  if (p) p.target = target;
+  else state.target = target;
   save();
 }
 
@@ -82,7 +85,9 @@ export function renderProfiles() {
 function storeProfile(name) {
   const i = state.profiles.findIndex((p) => p.name === name);
   const old = state.profiles[i];
-  const entry = { name, base: state.base, branches: [...state.selected], at: Date.now(), target: old?.target || '', built: old?.built };
+  // a new profile takes the target branch shown now
+  const target = old ? old.target || '' : envTarget();
+  const entry = { name, base: state.base, branches: [...state.selected], at: Date.now(), target, built: old?.built };
   if (i >= 0) state.profiles[i] = entry;
   else state.profiles = [...state.profiles, entry].sort((a, b) => a.name.localeCompare(b.name));
   state.activeProfile = name;

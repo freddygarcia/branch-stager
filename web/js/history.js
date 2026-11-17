@@ -1,6 +1,7 @@
 // The History panel: the last applies, each with a button to select its branches again.
 
 import { $, el } from './dom.js';
+import { historyAlwaysOpen } from './layout.js';
 import { renderAll } from './main.js';
 import { branchUrl } from './sources/github.js';
 import { HISTORY_LIMIT, save, session, state } from './state.js';
@@ -32,14 +33,14 @@ function branchCell(entry) {
 
 export function renderHistory() {
   const box = $('history');
-  $('historyDetails').open = state.historyOpen;
+  $('historyDetails').open = state.historyOpen || historyAlwaysOpen();
   const n = state.history.length;
   $('historySummary').textContent = n ? `— ${n} ${n === 1 ? 'entry' : 'entries'}` : '';
   if (!n) {
     box.replaceChildren(el('div', { class: 'empty' }, 'Nothing applied yet.'));
     return;
   }
-  const head = ['When', 'New branch', 'Base', 'Branches', 'Result', ''];
+  const head = ['When', 'Branch', 'Base', 'Branches', 'Result', ''];
   box.replaceChildren(el('table', {},
     el('tr', {}, head.map((h) => el('th', {}, h))),
     state.history.map((entry) => el('tr', {},
@@ -53,6 +54,7 @@ export function renderHistory() {
 }
 
 export function wireHistory() {
-  $('historyDetails').addEventListener('toggle', (e) => { state.historyOpen = e.target.open; save(); });
+  // opened by the Guided layout's drawer is not the user's choice: not saved
+  $('historyDetails').addEventListener('toggle', (e) => { if (!historyAlwaysOpen()) { state.historyOpen = e.target.open; save(); } });
   $('clearHistory').addEventListener('click', () => { state.history = []; save(); renderHistory(); });
 }

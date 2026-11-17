@@ -2,7 +2,8 @@
 //
 // Modules, by panel: profiles.js (top bar), backup.js and the settings here, jira.js,
 // branches.js (+ aheadbehind.js), selected.js (+ dryrun.js, conflicts.js), apply.js,
-// history.js. sources/ holds what differs between GitHub and the local clone.
+// history.js. sources/ holds what differs between GitHub and the local clone. layout.js
+// arranges the panels for the layout picked in Settings.
 
 import { helper } from './api.js';
 import { renewName, wireApply } from './apply.js';
@@ -12,7 +13,8 @@ import { wireConflicts } from './conflicts.js';
 import { $, el } from './dom.js';
 import { renderHistory, wireHistory } from './history.js';
 import { loadJiraFilters, renderJiraFilters, wireJira } from './jira.js';
-import { wireProfiles } from './profiles.js';
+import { showSettings, wireLayout } from './layout.js';
+import { envTarget, wireProfiles } from './profiles.js';
 import { renderSelected, wireSelected } from './selected.js';
 import { ready, source } from './sources/index.js';
 import { clearBranches, save, setBranches, setProtected, state } from './state.js';
@@ -24,7 +26,6 @@ function renderSettings() {
   for (const id of ['localPath', 'owner', 'repo', 'token', 'prefix', 'jiraUrl', 'jiraEmail', 'jiraToken']) {
     $(id).value = state[id];
   }
-  $('deleteOnFail').checked = state.deleteOnFail;
   $('hideArchived').checked = state.hideArchived;
   $('hideRemote').checked = state.hideRemote;
   $('staleOnly').checked = state.staleOnly;
@@ -44,7 +45,7 @@ export function renderAll() {
 /** List the branches again (the local clone fetches origin first). */
 export async function reload() {
   if (!ready()) {
-    $('settingsBox').open = true;
+    showSettings();
     $(source().settingField).focus();
     return;
   }
@@ -90,7 +91,7 @@ function wireSettings() {
     if (state.token && ready()) reload();
   });
   $('forgetToken').addEventListener('click', () => { state.token = ''; save(); clearBranches(); renderAll(); });
-  $('prefix').addEventListener('change', (e) => { state.prefix = e.target.value.trim(); save(); renewName(); });
+  $('prefix').addEventListener('change', (e) => { state.prefix = e.target.value.trim(); save(); });
   $('staleDays').addEventListener('change', (e) => {
     const days = Math.round(Number(e.target.value));
     state.staleDays = days >= 1 ? days : 15;
@@ -99,7 +100,6 @@ function wireSettings() {
     renderBranches();
     renderSelected();
   });
-  $('deleteOnFail').addEventListener('change', (e) => { state.deleteOnFail = e.target.checked; save(); });
   $('reload').addEventListener('click', reload);
 }
 
@@ -121,6 +121,7 @@ async function loadInfo() {
 
 async function start() {
   $('needsHelper').hidden = true; // modules run: the page is served by the helper
+  wireLayout(renderAll); // first: the other modules draw into the panels where the layout puts them
   wireSettings();
   wireProfiles();
   wireBackup();
@@ -131,13 +132,14 @@ async function start() {
   wireApply();
   wireHistory();
   showImportedNote();
-  renewName();
+  if (!envTarget()) renewName(); // first visit: a timestamped target to start from
   $('jql').value = state.jql;
   renderJiraFilters();
 
   const helperUp = await loadInfo();
   renderAll();
   if (!helperUp) return;
+  if (!ready()) showSettings(); // Guided keeps Settings in a drawer: open it once
   if (ready()) reload();
   loadJiraFilters();
 }

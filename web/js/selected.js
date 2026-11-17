@@ -6,6 +6,7 @@ import { renderConflicts } from './conflicts.js';
 import { $, el } from './dom.js';
 import { dryBadge, renderDrySummary, scheduleDryRun } from './dryrun.js';
 import { renderJira } from './jira.js';
+import { renderSteps } from './layout.js';
 import { renderProfiles } from './profiles.js';
 import { source } from './sources/index.js';
 import { renderStale, staleTag } from './stale.js';
@@ -131,6 +132,7 @@ export function renderSelected() {
   renderApplyControls();
   renderProfiles(); // the unsaved-changes dot follows the selection and base
   renderJira(); // the issues' branch buttons follow the selection and the branch list
+  renderSteps(); // Guided's step bar
 }
 
 export function wireSelected() {

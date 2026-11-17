@@ -20,7 +20,7 @@ Python 3 standard library only, and plain JavaScript modules with no build step.
 | `web/index.html`, `web/app.css` | The page's markup and styles. |
 | `web/js/main.js` | Starts the page: Settings, Reload, and wiring every panel. |
 | `web/js/sources/` | What differs between the two sources: `local.js` (the helper) and `github.js` (the GitHub API). |
-| `web/js/*.js` | One module per panel: `branches`, `selected`, `dryrun`, `conflicts`, `apply`, `profiles`, `stale`, `history`, `jira`, `backup`; plus `state` (saved settings), `api` and `dom` helpers. |
+| `web/js/*.js` | One module per panel: `branches`, `selected`, `dryrun`, `conflicts`, `apply`, `profiles`, `stale`, `history`, `jira`, `backup`; plus `state` (saved settings), `api` and `dom` helpers. `layout` arranges the panels for the chosen layout. |
 | `tests/` | Tests for the helper: `python3 -m unittest`. |
 
 ## Usage
@@ -33,14 +33,23 @@ python3 main.py [--port 8765] [--repo /path/to/your/clone]
 
 Then open <http://127.0.0.1:8765>. Opening `web/index.html` from disk doesn't work: the page needs the helper.
 
+### Layouts
+
+**Settings › Layout** picks how the page looks. Every layout has the same features; it is saved in this browser.
+
+- **Classic**: one page, top to bottom, following the light or dark setting of your system.
+- **Guided**: light, with a navy bar, and fits one window so the page doesn't scroll: each panel scrolls inside itself. The branch list and the Jira issues are two tabs of one **Pick branches** panel, next to the **Build plan**: the selection, then conflicts and the run log when there are any, with the Apply controls always at its bottom. A step bar shows where you are: pick, order and check, build. Settings and History open as drawers from the bar. In a small window the page scrolls as usual.
+
+In Guided, Ctrl+Enter (⌘+Enter on a Mac) presses Apply, and Esc closes a drawer.
+
 ### Local clone (recommended)
 
 Use this mode to see and merge local branches as well as `origin`'s. Choose **Settings › Source › Local clone** and enter the clone's folder in **Repository folder** (an absolute path; `~` works, and any folder inside the clone is fine).
 
 - The folder is saved in the browser, and you can switch to another clone at any time without restarting the server. `--repo` only pre-fills the field on first use.
 - Apply merges in a temporary git worktree, so your working copy, current branch and uncommitted changes are never touched.
-- If a merge conflicts, it is aborted and reported. By default the new branch is then deleted (see the **Settings** checkbox).
-- The new branch stays local unless you tick **Push to origin** next to Apply. It is only pushed if every merge succeeded, and the box is unticked on every page load.
+- If a merge conflicts, it is aborted and reported, and the target branch stays exactly as it was.
+- The target branch stays local unless you tick **Push to origin** next to Apply. It is only pushed if every merge succeeded, and the box is unticked on every page load.
 - **Reload** runs `git fetch --prune origin` first.
 
 ### Profiles
@@ -55,12 +64,13 @@ A profile saves a merge setup: the selected branches, their order and the base b
 
 Profiles are kept in this browser's localStorage, together with the other settings.
 
-### Environment branches
+### Target branch (an environment branch)
 
-A profile can name an **environment branch**, for example `env/staging`. With that profile active, the Selected panel shows an **Environment branch** field in place of **New branch name**, and Apply becomes **Rebuild env/staging**: the branch is built again from the base and the selected branches, replacing what it had, instead of a new timestamped branch being created each time.
+Apply builds the **Target branch**, next to the base, for example `env/staging`. Every target is treated as an environment branch: the first Apply creates it from the base and the selected branches, and every later Apply rebuilds it in place (**Rebuild**), replacing what it had. **↻** fills in a new timestamped name (`integration/20261117-1530`, with the prefix from Settings) when you want a fresh branch instead.
 
-- The field is saved into the active profile as soon as you leave it; empty means a new branch on every Apply. The tab shows it (`QA → env/qa`).
-- The merges run on a detached temporary worktree. The environment branch only moves once every merge succeeded, so a conflict leaves it exactly as it was.
+- With a profile active, the target is saved into that profile as you type; the tab shows it (`QA → env/qa`). With no profile active, the page remembers the last one. A new profile takes the target shown when it is saved.
+- When the target already exists the hint under it turns orange: Apply replaces that branch.
+- The merges run on a detached temporary worktree. The target only moves once every merge succeeded, so a conflict leaves it exactly as it was.
 - The last commit of a rebuild is an empty one that describes it: the base and every branch, with the commit each was at, as git trailers (`Branch-Merger-Base`, `Branch-Merger-Branch`, `Branch-Merger-Profile`). Anyone can see what an environment has with `git log -1 origin/env/staging`, or list its branches with `git log -1 --format='%(trailers:key=Branch-Merger-Branch,valueonly)' origin/env/staging`.
 - With **Push to origin**, the push uses `--force-with-lease` against the `origin` tip seen at the last Reload. If someone pushed to it since, nothing is overwritten: the push fails and says so. Reload, then rebuild again to replace it.
 - It can't be a protected name (so `env/staging`, not `staging`), the base, or one of the selected branches. In the local clone it can't be checked out in any folder while it is rebuilt.
@@ -99,9 +109,9 @@ Use a fine-grained token scoped to that one repository with **Contents: Read and
 
 ## Rules and safety
 
-- The new branch can't be a protected name: `master`, `main`, `staging`, `development`, `release/*` or `hotfix/*`. It also can't be a branch that already exists.
+- The target branch can't be a protected name: `master`, `main`, `staging`, `development`, `release/*` or `hotfix/*`, nor the base or a selected branch.
 - The local server only listens on `127.0.0.1`. API calls must carry an `X-Branch-Merger` header and come from the server's own origin, so other pages open in your browser can't call it.
-- Merges are `--no-ff` by default: every merged branch gets a merge commit. Choose **Merge strategy › Fast-forward** (under the new branch name) to fast-forward instead whenever a branch is ahead of the new branch (the others still get a merge commit). The choice goes back to `--no-ff` on every page load.
+- Merges are `--no-ff` by default: every merged branch gets a merge commit. Choose **Settings › Build › Merge strategy › Fast-forward** to fast-forward instead whenever a branch is ahead of the target (the others still get a merge commit). The choice is saved with the other settings.
 - Merges run with `--no-verify`, so local git hooks don't run on the merge commits. This matches merges made through the GitHub API.
 - Settings, the current selection and the history of applies are saved in the browser's `localStorage`.
 

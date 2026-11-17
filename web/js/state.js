@@ -17,7 +17,9 @@ const DEFAULTS = {
   hideRemote: true, // origin/* branches of a local clone (kept as base options)
   staleDays: 15, // a branch whose last commit is older than this many days is stale
   staleOnly: false,
-  deleteOnFail: true,
+  deleteOnFail: true, // sent to the helper; a rebuild never leaves a half-built branch anyway
+  target: '', // the branch Apply builds when no profile is active (a profile keeps its own)
+  mergeFf: false, // Settings > Build > Merge strategy: fast-forward instead of --no-ff
   history: [],
   historyOpen: true,
   // saved merges, switched between with Load: [{ name, base, branches, at, target }].
@@ -28,6 +30,8 @@ const DEFAULTS = {
   jiraUrl: '',
   jiraEmail: '',
   jiraToken: '',
+  layout: 'classic', // Settings > Layout: classic or guided (layout.js)
+  pickTab: 'branches', // Guided: the picker tab shown, 'branches' or 'jira'
   jql: '',
   jiraFilter: '',
   jiraOpen: true,

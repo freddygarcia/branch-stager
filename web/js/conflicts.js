@@ -3,6 +3,7 @@
 
 import { $, el } from './dom.js';
 import { dry, mergedBefore } from './dryrun.js';
+import { layout } from './layout.js';
 import { source } from './sources/index.js';
 import { state } from './state.js';
 
@@ -13,7 +14,8 @@ export function showConflicts(name) {
   head = name;
   $('conflictBox').dataset.key = '';
   renderConflicts();
-  $('conflictBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // Guided: to the top of the build plan, clear of the Apply controls stuck to its bottom
+  $('conflictBox').scrollIntoView({ behavior: 'smooth', block: layout() === 'guided' ? 'start' : 'nearest' });
 }
 
 export function renderConflicts() {
