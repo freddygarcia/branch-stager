@@ -47,6 +47,9 @@ export function renderBranches() {
   const shown = all.filter((name) =>
     (!state.hideArchived || !ARCHIVED.test(name)) && (!state.hideRemote || !isRemote(name)) && (!q || name.toLowerCase().includes(q))
     && (!staleOnly || ageTag(name)));
+  // newest commit first; branches with no known date (GitHub) keep their name order, last
+  const date = (name) => session.meta[name]?.date || 0;
+  shown.sort((a, b) => date(b) - date(a));
   $('branchCount').textContent = `${shown.length} of ${all.length}`;
 
   if (!shown.length) {
@@ -109,6 +112,11 @@ export function wireBranches() {
   $('hideArchived').addEventListener('change', (e) => { state.hideArchived = e.target.checked; save(); renderBranches(); });
   $('hideRemote').addEventListener('change', (e) => { state.hideRemote = e.target.checked; save(); renderBranches(); });
   $('staleOnly').addEventListener('change', (e) => { state.staleOnly = e.target.checked; save(); renderBranches(); });
+  $('hideBadges').addEventListener('change', (e) => {
+    state.hideBadges = e.target.checked;
+    save();
+    $('branchList').classList.toggle('no-badges', state.hideBadges);
+  });
   $('filter').addEventListener('input', renderBranches);
   $('base').addEventListener('change', (e) => {
     state.base = e.target.value;

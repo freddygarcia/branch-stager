@@ -29,6 +29,8 @@ function renderSettings() {
   $('hideArchived').checked = state.hideArchived;
   $('hideRemote').checked = state.hideRemote;
   $('staleOnly').checked = state.staleOnly;
+  $('hideBadges').checked = state.hideBadges;
+  $('branchList').classList.toggle('no-badges', state.hideBadges);
   $('staleDays').value = state.staleDays;
   if (!(Number(state.staleDays) > 0)) $('staleOnlyLabel').hidden = true; // 0 turns stale tags off
   $('settingsSummary').textContent = `— ${src.summary()}`;
