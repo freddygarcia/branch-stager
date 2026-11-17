@@ -16,6 +16,7 @@ const DEFAULTS = {
   hideArchived: true,
   deleteOnFail: true,
   history: [],
+  historyOpen: true,
   // saved merges, switched between with Load: [{ name, base, branches, at, target }].
   // `target`: the profile's environment branch, rebuilt in place by Apply ('' = none)
   // `built`: its last successful Apply, { at, name, base, baseSha, heads: { branch: sha } }
