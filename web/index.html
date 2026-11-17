@@ -193,13 +193,17 @@
     <div class="row" id="runLinks" style="margin-top:10px"></div>
   </section>
 
-  <section class="panel">
-    <div class="row" style="margin-bottom:10px">
-      <h2 style="margin:0">History</h2>
-      <span class="spacer"></span>
-      <button id="clearHistory">Clear history</button>
-    </div>
-    <div id="history"></div>
+  <section class="panel" id="historyBox">
+    <details id="historyDetails">
+      <summary><b>History</b> <span class="muted" id="historySummary"></span></summary>
+      <div style="margin-top:12px">
+        <div class="row" style="margin-bottom:10px">
+          <span class="spacer"></span>
+          <button id="clearHistory">Clear history</button>
+        </div>
+        <div id="history"></div>
+      </div>
+    </details>
   </section>
 </main>
 

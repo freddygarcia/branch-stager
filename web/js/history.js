@@ -32,7 +32,10 @@ function branchCell(entry) {
 
 export function renderHistory() {
   const box = $('history');
-  if (!state.history.length) {
+  $('historyDetails').open = state.historyOpen;
+  const n = state.history.length;
+  $('historySummary').textContent = n ? `— ${n} ${n === 1 ? 'entry' : 'entries'}` : '';
+  if (!n) {
     box.replaceChildren(el('div', { class: 'empty' }, 'Nothing applied yet.'));
     return;
   }
@@ -50,5 +53,6 @@ export function renderHistory() {
 }
 
 export function wireHistory() {
+  $('historyDetails').addEventListener('toggle', (e) => { state.historyOpen = e.target.open; save(); });
   $('clearHistory').addEventListener('click', () => { state.history = []; save(); renderHistory(); });
 }
