@@ -18,18 +18,12 @@ function localTag(name) {
   return null;
 }
 
-/** Why `name` is stale (no commits in Settings > Stale after days), else null. */
-function staleNote(name) {
+/** Tag for a branch with no commits in Settings > Stale after days. */
+export function ageTag(name) {
   const days = name === state.base || isProtected(name) ? null : staleAge(name);
   if (days === null) return null;
   const last = new Date(session.meta[name].date * 1000).toLocaleDateString();
-  return { days, title: `Stale: no commits for ${days} days (last ${last}); stale after ${state.staleDays}` };
-}
-
-/** Tag for a stale branch, used in the Selected list. The Branches list dims the name instead. */
-export function ageTag(name) {
-  const s = staleNote(name);
-  return s && el('span', { class: 'tag warn', title: s.title }, `stale ${s.days}d`);
+  return el('span', { class: 'tag warn', title: `No commits for ${days} days (last ${last}); stale after ${state.staleDays}` }, `stale ${days}d`);
 }
 
 function toggle(name, on) {
@@ -52,7 +46,7 @@ export function renderBranches() {
   const staleOnly = state.staleOnly && source().id === 'local';
   const shown = all.filter((name) =>
     (!state.hideArchived || !ARCHIVED.test(name)) && (!state.hideRemote || !isRemote(name)) && (!q || name.toLowerCase().includes(q))
-    && (!staleOnly || staleNote(name)));
+    && (!staleOnly || ageTag(name)));
   $('branchCount').textContent = `${shown.length} of ${all.length}`;
 
   if (!shown.length) {
@@ -62,8 +56,7 @@ export function renderBranches() {
   for (const name of shown) {
     const isBase = name === state.base;
     const id = `b-${name}`;
-    const stale = staleNote(name);
-    list.append(el('div', { class: `item${isBase ? ' disabled' : ''}${stale ? ' stale' : ''}`, title: stale?.title || '' },
+    list.append(el('div', { class: `item${isBase ? ' disabled' : ''}` },
       el('label', { htmlFor: id },
         el('input', {
           type: 'checkbox', id, checked: state.selected.includes(name), disabled: isBase,
@@ -71,6 +64,7 @@ export function renderBranches() {
         }),
         name),
       localTag(name),
+      ageTag(name),
       aheadBehind(name),
       isBase ? el('span', { class: 'tag' }, 'base') : null,
       isProtected(name) && !isBase ? el('span', { class: 'tag' }, 'protected') : null,
