@@ -15,7 +15,9 @@ const DEFAULTS = {
   selected: [],
   hideArchived: true,
   hideRemote: true, // origin/* branches of a local clone (kept as base options)
-  deleteOnFail: true,
+  deleteOnFail: true, // sent to the helper; a rebuild never leaves a half-built branch anyway
+  target: '', // the branch Apply builds when no profile is active (a profile keeps its own)
+  mergeFf: false, // Settings > Build > Merge strategy: fast-forward instead of --no-ff
   history: [],
   historyOpen: true,
   // saved merges, switched between with Load: [{ name, base, branches, at, target }].

@@ -14,7 +14,7 @@ import { $, el } from './dom.js';
 import { renderHistory, wireHistory } from './history.js';
 import { loadJiraFilters, renderJiraFilters, wireJira } from './jira.js';
 import { showSettings, wireLayout } from './layout.js';
-import { wireProfiles } from './profiles.js';
+import { envTarget, wireProfiles } from './profiles.js';
 import { renderSelected, wireSelected } from './selected.js';
 import { ready, source } from './sources/index.js';
 import { clearBranches, save, setBranches, setProtected, state } from './state.js';
@@ -26,7 +26,6 @@ function renderSettings() {
   for (const id of ['localPath', 'owner', 'repo', 'token', 'prefix', 'jiraUrl', 'jiraEmail', 'jiraToken']) {
     $(id).value = state[id];
   }
-  $('deleteOnFail').checked = state.deleteOnFail;
   $('hideArchived').checked = state.hideArchived;
   $('hideRemote').checked = state.hideRemote;
   $('settingsSummary').textContent = `— ${src.summary()}`;
@@ -90,8 +89,7 @@ function wireSettings() {
     if (state.token && ready()) reload();
   });
   $('forgetToken').addEventListener('click', () => { state.token = ''; save(); clearBranches(); renderAll(); });
-  $('prefix').addEventListener('change', (e) => { state.prefix = e.target.value.trim(); save(); renewName(); });
-  $('deleteOnFail').addEventListener('change', (e) => { state.deleteOnFail = e.target.checked; save(); });
+  $('prefix').addEventListener('change', (e) => { state.prefix = e.target.value.trim(); save(); });
   $('reload').addEventListener('click', reload);
 }
 
@@ -124,7 +122,7 @@ async function start() {
   wireApply();
   wireHistory();
   showImportedNote();
-  renewName();
+  if (!envTarget()) renewName(); // first visit: a timestamped target to start from
   $('jql').value = state.jql;
   renderJiraFilters();
 

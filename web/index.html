@@ -33,7 +33,7 @@
       <button id="profileDeleteAll" class="pdanger" title="Delete every saved profile">Delete all</button>
     </div>
     <nav class="appnav layout-only" id="appNav" aria-label="Pages">
-      <button type="button" id="historyBtn">History</button>
+      <button type="button" id="historyBtn" aria-controls="historyBox" aria-expanded="false">History</button>
       <button type="button" id="settingsBtn" aria-controls="settingsPanel" aria-expanded="false">Settings</button>
     </nav>
   </div>
@@ -73,12 +73,23 @@
         <div data-source="github"><label for="owner">Owner</label><input id="owner" type="text"></div>
         <div data-source="github"><label for="repo">Repository</label><input id="repo" type="text"></div>
         <div data-source="github"><label for="token">GitHub token (stored in this browser)</label><input id="token" type="password" autocomplete="off" placeholder="github_pat_…"></div>
-        <div><label for="prefix">New branch prefix</label><input id="prefix" type="text"></div>
+        <div><label for="prefix">Prefix of new names (↻)</label><input id="prefix" type="text"></div>
       </div>
-      <div class="row" style="margin-top:12px">
-        <label style="margin:0"><input id="deleteOnFail" type="checkbox"> Delete the new branch when a merge conflicts</label>
+      <div class="row" style="margin-top:12px" data-source="github">
         <span class="spacer"></span>
-        <button id="forgetToken" data-source="github">Forget token</button>
+        <button id="forgetToken">Forget token</button>
+      </div>
+
+      <div class="settings-section">
+        <h3>Build</h3>
+        <fieldset id="mergeMode" class="field">
+          <legend>Merge strategy</legend>
+          <div class="seg" role="radiogroup" aria-describedby="mergeHint">
+            <label><input type="radio" name="mergeMode" value="no-ff" checked><span>Merge commit <code>--no-ff</code></span></label>
+            <label><input type="radio" name="mergeMode" value="ff"><span>Fast-forward <code>--ff</code></span></label>
+          </div>
+          <div id="mergeHint" class="hint"></div>
+        </fieldset>
       </div>
 
       <div class="settings-section">
@@ -182,33 +193,23 @@
       <div id="staleNote" hidden></div>
 
       <div id="buildControls">
-      <div id="baseBox">
-        <label for="base">Base branch (the new branch starts here)</label>
-        <select id="base"></select>
-      </div>
-      <div id="envBox" hidden>
-        <label for="envBranch">Environment branch of profile <b id="envProfile"></b></label>
-        <input id="envBranch" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. env/staging (empty: a new branch on every Apply)">
-        <div class="hint" id="envHint"></div>
-      </div>
-      <div id="newNameBox">
-        <label for="newName">New branch name</label>
-        <div class="row">
-          <input id="newName" type="text" style="flex:1">
-          <button id="renew" class="icon" title="New timestamped name">↻</button>
+      <div class="build-fields">
+        <div id="baseBox">
+          <label for="base">Base branch</label>
+          <select id="base"></select>
+        </div>
+        <div id="targetBox">
+          <label for="target">Target branch <span class="muted" id="targetProfile"></span></label>
+          <div class="row" style="flex-wrap:nowrap">
+            <input id="target" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. env/staging">
+            <button id="renew" class="icon" title="A new timestamped name">↻</button>
+          </div>
         </div>
       </div>
-      <fieldset id="mergeMode" class="field">
-        <legend>Merge strategy</legend>
-        <div class="seg" role="radiogroup" aria-describedby="mergeHint">
-          <label><input type="radio" name="mergeMode" value="no-ff" checked><span>Merge commit <code>--no-ff</code></span></label>
-          <label><input type="radio" name="mergeMode" value="ff"><span>Fast-forward <code>--ff</code></span></label>
-        </div>
-        <div id="mergeHint" class="hint"></div>
-      </fieldset>
+      <div class="hint" id="targetHint"></div>
       <div class="row" id="applyRow">
         <span class="spacer"></span>
-        <label id="pushBox" hidden style="margin:0;font-size:14px;color:var(--text);white-space:nowrap" title="After all merges succeed, push the new branch to origin (git push --set-upstream). Off by default on every page load.">
+        <label id="pushBox" hidden style="margin:0;font-size:14px;color:var(--text);white-space:nowrap" title="After all merges succeed, push the target branch to origin. Off by default on every page load.">
           <input id="pushNew" type="checkbox"> Push to origin
         </label>
         <button id="apply" class="primary">Apply</button>
@@ -236,7 +237,12 @@
     <div class="row" id="runLinks" style="margin-top:10px"></div>
   </section>
 
-  <section class="panel" id="historyBox">
+  <section class="panel" id="historyBox" aria-label="History">
+    <div class="drawer-head layout-only">
+      <h2>History</h2>
+      <span class="spacer"></span>
+      <button type="button" id="historyClose" class="icon" aria-label="Close history (Esc)">×</button>
+    </div>
     <details id="historyDetails">
       <summary><b>History</b> <span class="muted" id="historySummary"></span></summary>
       <div style="margin-top:12px">

@@ -1,5 +1,7 @@
-// Apply: cut the new branch from the base and merge the selection into it, in order,
-// through the current source. Also the controls around it: name, merge strategy, push.
+// Apply: build the target branch from the base plus the selection, in order, through the
+// current source. Every target is treated as an environment branch: the first Apply
+// creates it, later ones rebuild it in place, and it only changes if every merge succeeds.
+// Also the controls around it: target branch and push. The merge strategy is in Settings.
 
 import { $, el, stamp } from './dom.js';
 import { addHistory } from './history.js';
@@ -9,70 +11,64 @@ import { renderSelected } from './selected.js';
 import { branchUrl, compareUrl, repoUrl } from './sources/github.js';
 import { ready, source } from './sources/index.js';
 import { recordBuild } from './stale.js';
-import { isProtected, session, state } from './state.js';
+import { isProtected, save, session, state } from './state.js';
 
 const DEPLOY_WORKFLOW = 'cd.fullstack.deploy.yml';
 
-export const renewName = () => { $('newName').value = state.prefix + stamp(); };
+/** Point the target at a new timestamped branch (↻). */
+export function renewName() {
+  setEnvTarget(state.prefix + stamp());
+  $('target').value = envTarget();
+}
 
-// Merge strategy and "Push to origin" are chosen again on every page load: not saved.
-const mergeFf = () => document.querySelector('input[name="mergeMode"]:checked')?.value === 'ff';
+// "Push to origin" is chosen again on every page load: not saved.
 const pushNew = () => source().canPush && $('pushNew').checked;
 
 function renderMergeHint() {
-  $('mergeHint').textContent = mergeFf()
-    ? 'A branch that is ahead of the new branch moves it forward with no merge commit. Branches that have diverged still get a merge commit.'
+  $('mergeHint').textContent = state.mergeFf
+    ? 'A branch that is ahead of the target moves it forward with no merge commit. Branches that have diverged still get a merge commit.'
     : 'Every branch gets its own merge commit, so the history shows what was merged and when.';
 }
 
-/** Where Apply writes: the active profile's environment branch (rebuilt), else a new branch. */
-function target() {
-  const env = envTarget();
-  return env ? { name: env, rebuild: true } : { name: $('newName').value.trim(), rebuild: false };
-}
-
-/** Why `name` can't be an environment branch, or null. */
-function envProblem(name) {
+/** Why `name` can't be the target branch, or null. */
+function targetProblem(name) {
   const same = (n) => n === name || n === `origin/${name}`;
+  if (!name) return 'Name the branch to build, e.g. env/staging, or press ↻ for a new one.';
   if (isProtected(name)) return `${name} is a protected branch name: pick another one, e.g. env/${name}.`;
   if (same(state.base)) return `${name} is the base branch: it can't also be rebuilt from it.`;
-  if (state.selected.some(same)) return `${name} is in the selection: remove it, or pick another environment branch.`;
+  if (state.selected.some(same)) return `${name} is in the selection: remove it, or pick another target branch.`;
   return null;
 }
 
-function renderEnv(running) {
+function renderTarget(running) {
   const p = activeProfile();
-  const env = envTarget();
-  $('envBox').hidden = !p;
-  $('newNameBox').hidden = Boolean(env);
-  if (!p) return;
-  $('envProfile').textContent = p.name;
-  if (document.activeElement !== $('envBranch')) $('envBranch').value = env;
-  $('envBranch').disabled = running;
-  const problem = env && envProblem(env);
+  const name = envTarget();
+  $('targetProfile').textContent = p ? `· profile ${p.name}` : '';
+  if (document.activeElement !== $('target')) $('target').value = name;
+  $('target').disabled = running;
+  $('renew').disabled = running;
+  const problem = targetProblem(name);
   const where = source().id === 'github' ? 'on GitHub' : 'in the local clone';
-  const exists = session.branches.includes(env);
-  $('envHint').className = problem ? 'err' : '';
-  $('envHint').textContent = problem || (env
-    ? (exists
-      ? `Apply rebuilds ${env} ${where} from the base and the selection, replacing what it had.`
-      : `Apply creates ${env} ${where} from the base and the selection; later Applies rebuild it in place.`)
-      + ' It only changes if every merge succeeds.'
-      + (source().canPush ? ' Push replaces origin\'s copy with --force-with-lease: a push someone made since the last Reload is not overwritten.' : '')
-    : 'Name a branch to rebuild it in place on every Apply, instead of creating a new branch each time.');
+  const exists = session.branches.includes(name);
+  const hint = $('targetHint');
+  hint.className = `hint${problem ? ' err' : exists ? ' warn' : ''}`;
+  hint.textContent = problem || (exists
+    ? `Apply replaces ${name} ${where} with the base plus the selection.`
+    : `Apply creates ${name} ${where}; later Applies rebuild it in place.`);
+  hint.title = problem ? '' : 'The branch only changes if every merge succeeds.'
+    + (source().canPush ? ' Push replaces origin\'s copy with --force-with-lease: a push someone made since the last Reload is not overwritten.' : '');
 }
 
 export function renderApplyControls() {
   const { running } = session;
-  const env = envTarget();
-  renderEnv(running);
-  $('apply').disabled = running || !state.selected.length || !state.base || !ready();
-  const verb = env ? `Rebuild ${env}` : 'Apply';
-  $('apply').textContent = pushNew() ? `${verb} & push` : verb;
+  const name = envTarget();
+  renderTarget(running);
+  $('apply').disabled = running || !state.selected.length || !state.base || !ready() || Boolean(targetProblem(name));
+  const verb = session.branches.includes(name) ? 'Rebuild' : 'Create';
+  $('apply').textContent = `${verb}${pushNew() ? ' & push' : ''}`;
+  $('apply').title = `${verb} ${name}`;
   $('pushBox').hidden = !source().canPush;
-  $('pushBox').title = env
-    ? `After all merges succeed, push ${env} to origin, replacing origin's copy (git push --force-with-lease). Off by default on every page load.`
-    : 'After all merges succeed, push the new branch to origin (git push --set-upstream). Off by default on every page load.';
+  $('pushBox').title = `After all merges succeed, push ${name || 'the target'} to origin, replacing origin's copy (git push --force-with-lease). Off by default on every page load.`;
   $('pushNew').disabled = running;
   $('mergeMode').disabled = running;
 }
@@ -121,15 +117,9 @@ function localLinks(name, rebuild) {
 // ---------------------------------------------------------------- apply
 
 /** Why the branch can't be made (or rebuilt), or null. */
-function refusal({ name, rebuild, branches }) {
-  if (rebuild) {
-    const problem = envProblem(name);
-    if (problem) return problem;
-  } else {
-    if (!name) return 'Enter a name for the new branch.';
-    if (isProtected(name)) return `"${name}" is a protected branch name. Pick another one.`;
-    if (session.branches.includes(name)) return `"${name}" already exists. Pick a new name.`;
-  }
+function refusal({ name, branches }) {
+  const problem = targetProblem(name);
+  if (problem) return problem;
   const missing = branches.filter((n) => session.branches.length && !session.branches.includes(n));
   if (missing.length) return `${source().missingText}: ${missing.join(', ')}. Remove them first.`;
   return null;
@@ -137,11 +127,13 @@ function refusal({ name, rebuild, branches }) {
 
 async function apply() {
   const src = source();
+  setEnvTarget($('target').value.trim()); // what is typed, even if it was never committed with Enter
   const run = {
-    ...target(),
+    name: envTarget(),
+    rebuild: true, // every target is an environment branch: created, then rebuilt in place
     base: state.base,
     branches: [...state.selected],
-    ff: mergeFf(),
+    ff: state.mergeFf,
     push: pushNew(),
     deleteOnFail: state.deleteOnFail,
     profile: activeProfile()?.name || '', // named in the commit that describes a rebuild
@@ -170,19 +162,23 @@ async function apply() {
   });
   if (outcome.ok) recordBuild(run, outcome.built);
   session.running = false;
-  if (outcome.ok && !run.rebuild) renewName();
   renderSelected();
   await reload(); // the new branch, and its merges, are in the list now
 }
 
 export function wireApply() {
   $('apply').addEventListener('click', apply);
-  $('renew').addEventListener('click', renewName);
+  $('renew').addEventListener('click', () => { renewName(); renderSelected(); });
   $('pushNew').addEventListener('change', renderApplyControls);
-  $('envBranch').addEventListener('change', (e) => { setEnvTarget(e.target.value.trim()); renderSelected(); });
-  $('mergeMode').addEventListener('change', renderMergeHint);
-  // no form restore: both start from their default on every page load
-  document.querySelector('input[name="mergeMode"][value="no-ff"]').checked = true;
-  $('pushNew').checked = false;
+  // typing updates the hint and the button; the profile tabs follow when the field is left
+  $('target').addEventListener('input', (e) => { setEnvTarget(e.target.value.trim()); renderApplyControls(); });
+  $('target').addEventListener('change', renderSelected);
+  $('mergeMode').addEventListener('change', (e) => {
+    state.mergeFf = e.target.value === 'ff';
+    save();
+    renderMergeHint();
+  });
+  document.querySelector(`input[name="mergeMode"][value="${state.mergeFf ? 'ff' : 'no-ff'}"]`).checked = true;
+  $('pushNew').checked = false; // no form restore: off on every page load
   renderMergeHint();
 }

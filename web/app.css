@@ -150,8 +150,11 @@ fieldset.field legend { padding: 0; font-size: 12px; color: var(--muted); margin
 .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
 .seg code { font-weight: 400; background: none; padding: 0; color: var(--muted); }
 fieldset:disabled .seg label { cursor: not-allowed; opacity: .6; }
-fieldset.field .hint, #envHint { font-size: 12.5px; color: var(--muted); margin-top: 5px; }
-#envHint.err { color: var(--err); }
+fieldset.field .hint, #targetHint { font-size: 12.5px; color: var(--muted); margin-top: 5px; }
+#targetHint.err { color: var(--err); }
+#targetHint.warn { color: var(--warn); }
+.build-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+#target { flex: 1; min-width: 0; }
 .ptab .penv { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; opacity: .7; }
 .ptab .pstale { font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--warn); }
 .ptab.active .pstale { color: var(--accent-text); }
@@ -170,6 +173,7 @@ fieldset.field .hint, #envHint { font-size: 12.5px; color: var(--muted); margin-
 #buildControls { margin-top: 16px; }
 #buildControls > * + * { margin-top: 10px; }
 #buildControls > #applyRow { margin-top: 14px; }
+#buildControls > #targetHint { margin-top: 5px; }
 
 /* pieces only Guided shows */
 html:not([data-layout=guided]) .layout-only { display: none !important; }
@@ -187,18 +191,19 @@ html:not([data-layout=classic]) #apply { min-height: 44px; padding: 0 20px; font
   border-radius: 4px; color: var(--muted); white-space: nowrap;
 }
 
-/* Settings: a drawer from the right */
-html:not([data-layout=classic]) #settingsPanel {
+/* Settings and History: drawers from the right (<html data-drawer> names the open one) */
+[data-layout=guided] #settingsPanel, [data-layout=guided] #historyBox {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 40; width: min(620px, 100%); margin: 0;
   border-radius: 0; border-width: 0 0 0 1px; overflow: auto; visibility: hidden; transform: translateX(100%);
   transition: transform .18s ease, visibility .18s; box-shadow: -12px 0 32px rgba(0,0,0,.18);
 }
-html.settings-open #settingsPanel { visibility: visible; transform: none; }
-html:not([data-layout=classic]) #settingsBox > summary { display: none; }
+[data-layout=guided] #historyBox { width: min(900px, 100%); }
+html[data-drawer=settings] #settingsPanel, html[data-drawer=history] #historyBox { visibility: visible; transform: none; }
+[data-layout=guided] #settingsBox > summary, [data-layout=guided] #historyDetails > summary { display: none; }
 .drawer-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .drawer-head h2 { margin: 0; font-size: 17px; }
 .scrim { position: fixed; inset: 0; z-index: 35; background: rgba(8,12,20,.45); }
-@media (prefers-reduced-motion: reduce) { html:not([data-layout=classic]) #settingsPanel { transition: none; } }
+@media (prefers-reduced-motion: reduce) { [data-layout=guided] #settingsPanel, [data-layout=guided] #historyBox { transition: none; } }
 
 /* ---------------------------------------------------------------- guided: navy and teal, light */
 :root[data-layout=guided] {
@@ -246,3 +251,33 @@ html:not([data-layout=classic]) #settingsBox > summary { display: none; }
 [data-layout=guided] #buildControls { padding-top: 14px; border-top: 1px solid var(--border); }
 [data-layout=guided] #applyRow .spacer { display: none; }
 [data-layout=guided] #applyRow #apply { flex: 1 1 220px; }
+/* conflicts and the run log, moved into the build plan */
+[data-layout=guided] #selectedPanel > .panel { margin: 12px 0 0; padding: 12px; border-radius: 8px; }
+[data-layout=guided] #selectedPanel > .panel h2 { font-size: 14px; }
+
+/* one window, no page scroll: each panel scrolls inside itself, the Apply controls stay
+   at the bottom of the build plan. Small windows fall back to a scrolling page. */
+@media (min-width: 900px) and (min-height: 560px) {
+  [data-layout=guided] body { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  [data-layout=guided] .topbar { position: static; flex: none; }
+  [data-layout=guided] main {
+    flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; padding-top: 14px; padding-bottom: 14px;
+  }
+  [data-layout=guided] main > * { flex: none; }
+  [data-layout=guided] .steps { margin-bottom: 12px; }
+  [data-layout=guided] main > .cols { flex: 1; min-height: 0; align-items: stretch; }
+  [data-layout=guided] .cols > .panel { margin: 0; min-height: 0; display: flex; flex-direction: column; }
+  [data-layout=guided] .cols > .panel > * { flex: none; }
+  [data-layout=guided] #pickPanel { overflow: hidden; }
+  [data-layout=guided] #pickBody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  [data-layout=guided] #branchesPanel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  [data-layout=guided] #branchesPanel > * { flex: none; }
+  [data-layout=guided] #branchList { flex: 1 1 0; min-height: 80px; max-height: none; }
+  [data-layout=guided] #jiraList { max-height: calc(100dvh - 330px); }
+  [data-layout=guided] #selectedPanel { overflow: auto; }
+  [data-layout=guided] #selectedList { max-height: none; }
+  [data-layout=guided] #buildControls {
+    position: sticky; bottom: -16px; z-index: 2; margin: auto -16px -16px; padding: 12px 16px 16px;
+    background: var(--panel); border-radius: 0 0 12px 12px;
+  }
+}

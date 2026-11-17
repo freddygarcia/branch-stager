@@ -1,5 +1,6 @@
-// Layouts (Settings > Layout). Classic is the page as it always was. Guided puts the branch
-// pickers in tabs next to the build plan, under a navy bar with Settings in a drawer.
+// Layouts (Settings > Layout). Classic is the page as it always was. Guided fits one
+// window: the branch pickers in tabs next to the build plan (which also shows conflicts and
+// the run log), under a navy bar that opens Settings and History as drawers.
 //
 // There is one copy of each panel (the other modules find them by id): a layout moves
 // them into its slots, and app.css themes the page by <html data-layout>. A comment marks
@@ -10,39 +11,64 @@ import { save, session, state } from './state.js';
 
 const LAYOUTS = ['classic', 'guided'];
 export const layout = () => (LAYOUTS.includes(state.layout) ? state.layout : 'classic');
+const guided = () => layout() === 'guided';
 
-// in the order they are appended to a shared slot
-const MOVABLE = ['branchesPanel', 'jiraBox'];
+// in the order they are placed; a place is a container's id (appended to it) or
+// { before: id } (put just before that element)
+const MOVABLE = ['branchesPanel', 'jiraBox', 'conflictBox', 'runBox'];
 const PLACES = {
   classic: {},
-  guided: { branchesPanel: 'pickBody', jiraBox: 'pickBody' },
+  guided: {
+    branchesPanel: 'pickBody', jiraBox: 'pickBody',
+    conflictBox: { before: 'buildControls' }, runBox: { before: 'buildControls' },
+  },
 };
 const TITLES = { classic: 'Selected', guided: 'Build plan' };
 const homes = new Map();
 
-/** Guided shows the Jira panel as a tab, always open. */
-export const jiraAlwaysOpen = () => layout() === 'guided';
+/** Guided shows Jira as a tab and History as a drawer: both always open. */
+export const jiraAlwaysOpen = guided;
+export const historyAlwaysOpen = guided;
 
-/** Open Settings: the panel in Classic, the drawer in the other layouts. */
+// ---------------------------------------------------------------- drawers (Guided)
+
+// `details`: the collapsible section inside; its summary is hidden in a drawer, so a
+// drawer always opens it (or the drawer would look empty)
+const DRAWERS = {
+  settings: { panel: 'settingsPanel', details: 'settingsBox', button: 'settingsBtn', close: 'settingsClose' },
+  history: { panel: 'historyBox', details: 'historyDetails', button: 'historyBtn', close: 'historyClose' },
+};
+const openDrawer = () => document.documentElement.dataset.drawer || '';
+
+function showDrawer(name) {
+  closeDrawer({ refocus: false });
+  $(DRAWERS[name].details).open = true;
+  document.documentElement.dataset.drawer = name;
+  $('scrim').hidden = false;
+  $(DRAWERS[name].button).setAttribute('aria-expanded', 'true');
+  $(DRAWERS[name].close).focus();
+}
+
+function closeDrawer({ refocus = true } = {}) {
+  const name = openDrawer();
+  if (!name) return;
+  delete document.documentElement.dataset.drawer;
+  $('scrim').hidden = true;
+  $(DRAWERS[name].button).setAttribute('aria-expanded', 'false');
+  if (refocus && guided()) $(DRAWERS[name].button).focus();
+}
+
+const toggleDrawer = (name) => (openDrawer() === name ? closeDrawer() : showDrawer(name));
+
+/** Open Settings: the panel in Classic, the drawer in Guided. */
 export function showSettings() {
   $('settingsBox').open = true;
-  if (layout() === 'classic') return;
-  document.documentElement.classList.add('settings-open');
-  $('scrim').hidden = false;
-  $('settingsBtn').setAttribute('aria-expanded', 'true');
-  $('settingsClose').focus();
+  if (guided()) showDrawer('settings');
 }
 
-function closeSettings() {
-  const html = document.documentElement;
-  if (!html.classList.contains('settings-open')) return;
-  html.classList.remove('settings-open');
-  $('scrim').hidden = true;
-  $('settingsBtn').setAttribute('aria-expanded', 'false');
-  if (layout() !== 'classic') $('settingsBtn').focus();
-}
+// ---------------------------------------------------------------- guided's pieces
 
-/** Guided: which picker tab shows, all branches or Jira issues. */
+/** Which picker tab shows, all branches or Jira issues. */
 function renderPickTabs() {
   const jira = state.pickTab === 'jira';
   $('tabJira').setAttribute('aria-selected', String(jira));
@@ -51,9 +77,9 @@ function renderPickTabs() {
   $('branchesPanel').classList.toggle('tab-off', jira);
 }
 
-/** Guided: the step bar follows the work, pick → order and check → build. */
+/** The step bar follows the work, pick → order and check → build. */
 export function renderSteps() {
-  if (layout() !== 'guided') return;
+  if (!guided()) return;
   const now = session.running || !$('runBox').hidden ? 3 : state.selected.length ? 2 : 1;
   for (const li of $('steps').children) {
     const n = Number(li.dataset.step);
@@ -70,23 +96,24 @@ function applyLayout() {
   $('layout').value = name;
   const places = PLACES[name];
   for (const id of MOVABLE) {
-    if (places[id]) $(places[id]).append($(id));
-    else homes.get(id).after($(id));
+    const to = places[id];
+    if (!to) homes.get(id).after($(id));
+    else if (to.before) $(to.before).before($(id));
+    else $(to).append($(id));
   }
   $('selectedTitle').textContent = TITLES[name];
   $('selectedSub').hidden = name !== 'classic';
-  if (name === 'classic') closeSettings();
+  if (name === 'classic') closeDrawer();
   renderPickTabs();
   renderSteps();
 }
 
 function onKey(e) {
-  const name = layout();
-  if (e.key === 'Escape' && document.documentElement.classList.contains('settings-open')) {
-    closeSettings();
+  if (e.key === 'Escape' && openDrawer()) {
+    closeDrawer();
     return;
   }
-  if (name === 'classic') return;
+  if (!guided()) return;
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
     if (e.target.closest?.('textarea, #settingsPanel')) return;
     e.preventDefault();
@@ -108,17 +135,11 @@ export function wireLayout(rerender) {
     applyLayout();
     rerender();
   });
-  $('settingsBtn').addEventListener('click', () => {
-    if (document.documentElement.classList.contains('settings-open')) closeSettings();
-    else showSettings();
-  });
-  $('settingsClose').addEventListener('click', closeSettings);
-  $('scrim').addEventListener('click', closeSettings);
-  $('historyBtn').addEventListener('click', () => {
-    closeSettings();
-    $('historyDetails').open = true;
-    $('historyBox').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
+  for (const [name, d] of Object.entries(DRAWERS)) {
+    $(d.button).addEventListener('click', () => toggleDrawer(name));
+    $(d.close).addEventListener('click', () => closeDrawer());
+  }
+  $('scrim').addEventListener('click', () => closeDrawer());
   for (const [id, tab] of [['tabJira', 'jira'], ['tabBranches', 'branches']]) {
     $(id).addEventListener('click', () => { state.pickTab = tab; save(); renderPickTabs(); });
   }
