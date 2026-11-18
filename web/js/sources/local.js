@@ -3,14 +3,15 @@
 // and the conflict view.
 
 import { helper, helperPost } from '../api.js';
-import { state } from '../state.js';
+import { session, state } from '../state.js';
 
-/** Local and origin branches, after fetching origin: { name: { sha, kind, remote, shadowed } }. */
+/** Local and origin branches, after fetching origin: { name: { sha, date, author, kind, remote, shadowed } }. */
 async function listBranches() {
   const fetched = await helper('/fetch', { method: 'POST' });
   if (fetched.status !== 200) console.warn('git fetch failed, listing what is already known', fetched.data);
   const { status, data } = await helper('/branches');
   if (status !== 200) throw new Error(`Listing branches failed (${status}): ${data?.error || ''}`);
+  session.me = data.me;
   return Object.fromEntries(data.branches.map((b) => [b.name, b]));
 }
 

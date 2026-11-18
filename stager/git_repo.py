@@ -105,20 +105,23 @@ class Repo:
         Local branches and the remote's branches. A remote branch with a local branch of the
         same name is `shadowed`: the page lists the local one (with how it compares to the
         remote) and offers the remote one only as a base. `date` is the tip's committer date
-        (Unix seconds), for telling stale branches.
+        (Unix seconds), for telling stale branches; `author` is the tip's author email
+        (lowercased), for the "Mine only" filter.
         """
         lines = self.out(
             "for-each-ref",
-            "--format=%(refname)%00%(objectname)%00%(committerdate:unix)",
+            "--format=%(refname)%00%(objectname)%00%(committerdate:unix)%00%(authoremail:trim)",
             "refs/heads",
             f"refs/remotes/{REMOTE}",
         ).splitlines()
         local: dict[str, str] = {}
         remote: dict[str, str] = {}
         dates: dict[str, int | None] = {}
+        authors: dict[str, str] = {}
         for line in lines:
-            ref, sha, date = line.split("\0")
+            ref, sha, date, author = line.split("\0")
             dates[sha] = int(date) if date.isdigit() else None
+            authors[sha] = author.lower()
             if ref.startswith("refs/heads/"):
                 local[ref.removeprefix("refs/heads/")] = sha
             elif ref != f"refs/remotes/{REMOTE}/HEAD":
@@ -137,6 +140,7 @@ class Repo:
                     "name": name,
                     "sha": sha,
                     "date": dates[sha],
+                    "author": authors[sha],
                     "kind": "local",
                     "remote": on_remote,
                     "shadowed": False,
@@ -148,12 +152,19 @@ class Repo:
                     "name": f"{REMOTE}/{name}",
                     "sha": sha,
                     "date": dates[sha],
+                    "author": authors[sha],
                     "kind": "remote",
                     "remote": None,
                     "shadowed": name in local,
                 }
             )
         return sorted(items, key=lambda item: item["name"])
+
+    def user_email(self) -> str | None:
+        """The email git authors commits with here (config or environment), lowercased."""
+        ident = self.run("var", "GIT_AUTHOR_IDENT", check=False).stdout
+        email = ident.partition("<")[2].partition(">")[0]
+        return email.lower() or None
 
     def check_new_branch_name(self, name: str, *, may_exist: bool = False) -> None:
         """Refuse a name Apply must not write: invalid, protected, or (unless `may_exist`) taken."""

@@ -108,7 +108,7 @@ def info(req: Request) -> dict:
 
 def branches(req: Request) -> dict:
     repo = req.repo
-    return {"repo": str(repo.path), "branches": repo.branches()}
+    return {"repo": str(repo.path), "me": repo.user_email(), "branches": repo.branches()}
 
 
 def compare(req: Request) -> dict:
