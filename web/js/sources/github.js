@@ -179,6 +179,26 @@ async function build({ name, into = name, base, branches, ff, deleteOnFail, log 
   return { ok: true, result: `${merged} merged${ffNote}${upToDate ? `, ${upToDate} up to date` : ''}`, pushed: false, where: 'remote', built };
 }
 
+/**
+ * Delete branches ([{ name, sha }]): [{ name, ok, message }]. GitHub has no conditional
+ * delete, so each is read first and kept if it moved since the last Reload.
+ */
+async function deleteBranches(branches) {
+  const results = [];
+  for (const { name, sha } of branches) {
+    const ref = await gh(`/git/ref/heads/${refPath(name)}`);
+    let message;
+    if (ref.status !== 200) message = `Could not read ${name} (${ref.status})`;
+    else if (ref.data.object.sha !== sha) message = `${name} changed since the last Reload: not deleted.`;
+    else {
+      const del = await gh(`/git/refs/heads/${refPath(name)}`, { method: 'DELETE' });
+      message = del.status === 204 ? null : `Could not delete ${name} (${del.status}): ${del.data?.message || ''}`;
+    }
+    results.push({ name, ok: !message, message: message || `Deleted ${name}` });
+  }
+  return results;
+}
+
 export default {
   id: 'github',
   settingField: 'token',
@@ -190,4 +210,5 @@ export default {
   listBranches,
   compare,
   apply,
+  deleteBranches,
 };

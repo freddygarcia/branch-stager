@@ -249,6 +249,45 @@ class Repo:
             if line.startswith("worktree ")
         }
 
+    def delete_listed(self, name: str, sha: str) -> str:
+        """
+        Delete a branch as `branches()` lists it: `x` locally, `origin/x` on the remote,
+        and only while it is still at `sha`, so a branch someone moved since the last
+        Reload is kept. Returns what was done; raises GitError when nothing was.
+        """
+        remote = name.startswith(f"{REMOTE}/")
+        bare = name.removeprefix(f"{REMOTE}/")
+        if not self.succeeds("check-ref-format", "--branch", bare):
+            msg = f'"{name}" is not a valid branch name.'
+            raise GitError(msg)
+        if PROTECTED.match(bare):
+            msg = f"{name} is a protected branch: not deleted."
+            raise GitError(msg)
+        if remote:
+            result = self.run(
+                "push",
+                f"--force-with-lease=refs/heads/{bare}:{sha}",
+                REMOTE,
+                f":refs/heads/{bare}",
+                check=False,
+            )
+            if result.returncode != 0:
+                if "stale info" in result.stderr:
+                    msg = f"{name} changed since the last Reload: not deleted."
+                    raise GitError(msg)
+                msg = (result.stderr or result.stdout).strip() or "git push failed"
+                raise GitError(msg)
+            return f"Deleted {bare} on {REMOTE}"
+        where = self.checked_out_at(bare)
+        if where:
+            msg = f"{name} is checked out in {where}: not deleted."
+            raise GitError(msg)
+        # with the old value git refuses when the branch has moved
+        if not self.succeeds("update-ref", "-d", f"refs/heads/{bare}", sha):
+            msg = f"{name} changed since the last Reload, or is gone: not deleted."
+            raise GitError(msg)
+        return f"Deleted {name}"
+
     def delete_branch(self, name: str) -> None:
         self.run("branch", "-D", name, check=False)
 

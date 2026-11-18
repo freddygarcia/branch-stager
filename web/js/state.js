@@ -33,6 +33,9 @@ const DEFAULTS = {
   jiraUrl: '',
   jiraEmail: '',
   jiraToken: '',
+  // Settings > Jira: statuses a selected branch's issue should be in, comma-separated;
+  // '' flags only issues in a done status
+  jiraExpect: '',
   layout: 'classic', // Settings > Layout: classic or guided (layout.js)
   pickTab: 'branches', // Guided: the picker tab shown, 'branches' or 'jira'
   jql: '',

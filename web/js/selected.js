@@ -2,10 +2,11 @@
 
 import { renderApplyControls } from './apply.js';
 import { ageTag, renderBranches } from './branches.js';
+import { inBaseTag, isMissing, renderCleanup } from './cleanup.js';
 import { renderConflicts } from './conflicts.js';
 import { $, el } from './dom.js';
 import { dryBadge, renderDrySummary, scheduleDryRun } from './dryrun.js';
-import { renderJira } from './jira.js';
+import { issueTag, renderJira } from './jira.js';
 import { renderSteps } from './layout.js';
 import { renderProfiles } from './profiles.js';
 import { source } from './sources/index.js';
@@ -69,6 +70,9 @@ function drop(e, i, row) {
   if (from === target || from === target - 1) renderSelected();
 }
 
+/** Redraw for data that arrived (counts, issues); during a drag, the drop redraws. */
+const redraw = () => { if (dragFrom === null) renderSelected(); };
+
 function dragEnd() {
   if (dragFrom === null) return; // dropped: already re-rendered
   dragFrom = null;
@@ -85,8 +89,8 @@ function gripKey(e, i) {
 const MAX_NAME = 48;
 
 function row(name, i) {
-  const { branches, running } = session;
-  const missing = branches.length && !branches.includes(name);
+  const { running } = session;
+  const missing = isMissing(name);
   const node = el('div', {
     class: 'item',
     draggable: !running,
@@ -107,9 +111,10 @@ function row(name, i) {
     }, '⋮⋮'),
     el('span', { class: 'muted', style: 'width:20px' }, String(i + 1)),
     el('span', { style: 'flex:1;', title: name }, name.length > MAX_NAME ? `${name.slice(0, MAX_NAME)}…` : name),
+    issueTag(name),
     missing ? null : staleTag(name),
     missing ? null : ageTag(name),
-    missing ? el('span', { class: 'tag warn', title: source().missingText }, 'missing') : dryBadge(name, i),
+    missing ? el('span', { class: 'tag warn', title: source().missingText }, 'missing') : dryBadge(name, i) || inBaseTag(name),
     el('button', { class: 'icon', title: 'Remove', onclick: () => setSelected(state.selected.filter((n) => n !== name)) }, '×'),
   );
   return node;
@@ -127,7 +132,8 @@ export function renderSelected() {
   if (focused) [...list.querySelectorAll('.grip')].find((g) => g.dataset.name === focused)?.focus();
 
   renderDrySummary();
-  renderStale(renderSelected);
+  renderCleanup(redraw);
+  renderStale(redraw);
   renderConflicts();
   renderApplyControls();
   renderProfiles(); // the unsaved-changes dot follows the selection and base

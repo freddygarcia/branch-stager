@@ -19,6 +19,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 from . import merge, resolve
 from .config import (
     API_HEADER,
+    ISSUE_KEY,
+    JIRA_KEYS_MAX,
     JQL_MAX,
     PROTECTED,
     REMOTE,
@@ -169,6 +171,34 @@ def fetch(req: Request) -> dict:
     return {"ok": True}
 
 
+def delete_branches(req: Request) -> dict:
+    """Delete branches ([{name, sha}]), each only while it is still at that sha."""
+    items = req.body.get("branches")
+    if (
+        not isinstance(items, list)
+        or not items
+        or not all(
+            isinstance(b, dict)
+            and isinstance(b.get("name"), str)
+            and isinstance(b.get("sha"), str)
+            and SHA.match(b["sha"])
+            for b in items
+        )
+    ):
+        msg = "branches must be a non-empty list of {name, sha}"
+        raise BadRequest(msg)
+    repo = req.repo
+    results = []
+    with WRITE_LOCK:
+        for b in items:
+            try:
+                done = {"ok": True, "message": repo.delete_listed(b["name"], b["sha"])}
+            except GitError as e:
+                done = {"ok": False, "message": str(e)}
+            results.append({"name": b["name"], **done})
+    return {"results": results}
+
+
 def dry_run(req: Request) -> dict:
     heads = req.str_list("branches")
     return {"results": merge.dry_run(req.repo, str(req.body.get("base", "")), heads)}
@@ -207,6 +237,14 @@ def jira_search(req: Request) -> dict:
     return req.jira.search(jql.strip(), page_token)
 
 
+def jira_issues(req: Request) -> dict:
+    keys = req.str_list("keys", non_empty=True)
+    if len(keys) > JIRA_KEYS_MAX or not all(ISSUE_KEY.match(k) for k in keys):
+        msg = f"keys must be at most {JIRA_KEYS_MAX} issue keys like ODS-123"
+        raise BadRequest(msg)
+    return req.jira.issues(list(dict.fromkeys(keys)))
+
+
 ROUTES: dict[tuple[str, str], Callable[[Request], dict]] = {
     ("GET", "/api/info"): info,
     ("GET", "/api/branches"): branches,
@@ -217,10 +255,12 @@ ROUTES: dict[tuple[str, str], Callable[[Request], dict]] = {
     ("POST", "/api/resolve/save"): resolve_save,
     ("POST", "/api/resolve/discard"): resolve_discard,
     ("POST", "/api/fetch"): fetch,
+    ("POST", "/api/branches/delete"): delete_branches,
     ("POST", "/api/dry-run"): dry_run,
     ("POST", "/api/apply"): apply,
     ("POST", "/api/jira/filters"): jira_filters,
     ("POST", "/api/jira/search"): jira_search,
+    ("POST", "/api/jira/issues"): jira_issues,
 }
 
 

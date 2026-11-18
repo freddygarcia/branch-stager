@@ -37,6 +37,10 @@ JIRA_FIELDS = ["summary", "status", "assignee", "issuetype", "priority"]
 JIRA_PAGE = 50
 JIRA_TIMEOUT = 30
 JQL_MAX = 10_000
+# issue status in the Selected list: keys per Jira request, most keys per helper request
+JIRA_BULK = 100
+JIRA_KEYS_MAX = 500
+ISSUE_KEY = re.compile(r"^[A-Z][A-Z0-9_]+-[0-9]+$")
 JIRA_ENV = ("JIRA_URL", "JIRA_EMAIL", "JIRA_API_TOKEN")
 
 

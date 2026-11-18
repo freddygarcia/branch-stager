@@ -32,6 +32,9 @@ async function apply({ name, base, branches, ff, push, deleteOnFail, rebuild, pr
   };
 }
 
+/** Delete branches ([{ name, sha }]) while they are still at sha: [{ name, ok, message }]. */
+const deleteBranches = async (branches) => (await helperPost('/branches/delete', { branches }, 'Delete failed')).results;
+
 /** The dry run's result for each branch: { head: { status, files, tree, notes, message } }. */
 async function dryRun(base, branches) {
   const data = await helperPost('/dry-run', { base, branches }, 'Dry run failed');
@@ -60,6 +63,7 @@ export default {
   listBranches,
   compare,
   apply,
+  deleteBranches,
   dryRun,
   conflict,
   resolve,

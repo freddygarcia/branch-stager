@@ -185,6 +185,37 @@ class RouteTest(ServerTestCase):
         status, _ = self.request("POST", "/api/jira/search", {"jql": ""})
         self.assertEqual(status, 400)
 
+    def test_delete_branches(self):
+        self.git("branch", "integration/1", "feature-a")
+        self.git("branch", "integration/2", "feature-b")
+        status, body = self.request(
+            "POST",
+            "/api/branches/delete",
+            {
+                "branches": [
+                    {"name": "integration/1", "sha": self.sha("feature-a")},
+                    # moved since it was listed: kept
+                    {"name": "integration/2", "sha": self.sha("feature-a")},
+                ]
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual([r["ok"] for r in body["results"]], [True, False])
+        self.assertEqual(self.git("branch", "--list", "integration/*"), "integration/2")
+        for bad in ([], [{"name": "x"}], [{"name": "x", "sha": "nope"}], "x"):
+            with self.subTest(branches=bad):
+                status, _ = self.request("POST", "/api/branches/delete", {"branches": bad})
+                self.assertEqual(status, 400)
+
+    def test_jira_issues_keys(self):
+        for keys in ([], ["ods-1"], ["ODS"], ["ODS-1"] * 501):
+            with self.subTest(keys=keys[:2]):
+                status, _ = self.request("POST", "/api/jira/issues", {"keys": keys})
+                self.assertEqual(status, 400)
+        status, body = self.request("POST", "/api/jira/issues", {"keys": ["ODS-1"]})
+        self.assertEqual(status, 422)
+        self.assertIn("Jira", body["error"])
+
     def test_unknown_route(self):
         self.assertEqual(self.request("GET", "/api/nope")[0], 404)
         self.assertEqual(self.request("POST", "/api/nope", {})[0], 404)
@@ -207,6 +238,16 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(jira.url, "https://x.atlassian.net")
         with self.assertRaisesRegex(JiraError, "object"):
             Jira.from_settings("x")
+
+    def test_jira_issues_in_chunks(self):
+        jira = Jira("https://x.atlassian.net", "a@b.c", "t")
+        keys = [f"ODS-{n}" for n in range(150)]
+        answer = {"issues": [{"key": "ODS-1", "fields": {"status": {"name": "Done", "statusCategory": {"key": "done"}}}}]}
+        with mock.patch.object(jira, "call", return_value=answer) as call:
+            found = jira.issues(keys)
+        self.assertEqual([len(c.args[1]["issueIdsOrKeys"]) for c in call.call_args_list], [100, 50])
+        self.assertEqual(found["issues"][0]["status"], "Done")
+        self.assertEqual(found["issues"][0]["category"], "done")
 
     def test_load_dotenv(self):
         with tempfile.TemporaryDirectory() as tmp:
