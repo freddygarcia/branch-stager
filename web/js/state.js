@@ -13,10 +13,10 @@ const DEFAULTS = {
   localPath: '',
   base: 'master',
   selected: [],
-  hideArchived: true,
   hideRemote: true, // origin/* branches of a local clone (kept as base options)
   staleDays: 15, // a branch whose last commit is older than this many days is stale
   staleOnly: false,
+  mineOnly: false, // local clone: branches whose last commit is by the clone's git user
   hideBadges: false, // the tags and counts beside each branch in the Branches list
   deleteOnFail: true, // sent to the helper; a rebuild never leaves a half-built branch anyway
   target: '', // the branch Apply builds when no profile is active (a profile keeps its own)
@@ -64,6 +64,7 @@ export const session = {
   branches: [], // every branch name from the last reload (base options, existence checks)
   shas: {}, // branch name -> tip sha
   meta: {}, // branch name -> what the source told about it (local clone: kind, remote, shadowed)
+  me: null, // local clone: the git user's email, matched against each branch's `author`
   running: false, // an Apply is in progress
 };
 

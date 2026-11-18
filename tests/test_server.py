@@ -98,6 +98,9 @@ class RouteTest(ServerTestCase):
         self.assertIn("feature-a", [b["name"] for b in body["branches"]])
         dates = [b["date"] for b in body["branches"]]
         self.assertTrue(all(isinstance(d, int) and d > 0 for d in dates), dates)
+        # the fixture's commits are authored by its git user: every branch is "mine"
+        self.assertEqual(body["me"], "test@example.invalid")
+        self.assertTrue(all(b["author"] == body["me"] for b in body["branches"]))
 
     def test_missing_repo(self):
         status, body = self.request("GET", "/api/branches", repo=False)

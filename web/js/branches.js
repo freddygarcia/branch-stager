@@ -44,9 +44,10 @@ export function renderBranches() {
   const q = $('filter').value.trim().toLowerCase();
   const all = listed();
   const staleOnly = state.staleOnly && source().id === 'local' && Number(state.staleDays) > 0;
+  const mineOnly = state.mineOnly && source().id === 'local' && session.me;
   const shown = all.filter((name) =>
-    (!state.hideArchived || !ARCHIVED.test(name)) && (!state.hideRemote || !isRemote(name)) && (!q || name.toLowerCase().includes(q))
-    && (!staleOnly || ageTag(name)));
+    (!state.hideRemote || !isRemote(name)) && (!q || name.toLowerCase().includes(q))
+    && (!staleOnly || ageTag(name)) && (!mineOnly || session.meta[name]?.author === session.me));
   // newest commit first; branches with no known date (GitHub) keep their name order, last
   const date = (name) => session.meta[name]?.date || 0;
   shown.sort((a, b) => date(b) - date(a));
@@ -109,9 +110,9 @@ export function renderBase() {
 }
 
 export function wireBranches() {
-  $('hideArchived').addEventListener('change', (e) => { state.hideArchived = e.target.checked; save(); renderBranches(); });
   $('hideRemote').addEventListener('change', (e) => { state.hideRemote = e.target.checked; save(); renderBranches(); });
   $('staleOnly').addEventListener('change', (e) => { state.staleOnly = e.target.checked; save(); renderBranches(); });
+  $('mineOnly').addEventListener('change', (e) => { state.mineOnly = e.target.checked; save(); renderBranches(); });
   $('hideBadges').addEventListener('change', (e) => {
     state.hideBadges = e.target.checked;
     save();

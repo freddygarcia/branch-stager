@@ -18,7 +18,7 @@ const settings = () => ({ url: state.jiraUrl, email: state.jiraEmail, token: sta
 function branchesFor(key) {
   const re = new RegExp(`(^|[^a-z0-9])${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![0-9])`, 'i');
   return listed().filter((n) =>
-    re.test(n) && n !== state.base && !isProtected(n) && (!state.hideArchived || !ARCHIVED.test(n)));
+    re.test(n) && n !== state.base && !isProtected(n) && !ARCHIVED.test(n));
 }
 
 export async function loadJiraFilters() {

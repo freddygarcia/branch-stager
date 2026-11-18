@@ -26,9 +26,9 @@ function renderSettings() {
   for (const id of ['localPath', 'owner', 'repo', 'token', 'prefix', 'jiraUrl', 'jiraEmail', 'jiraToken']) {
     $(id).value = state[id];
   }
-  $('hideArchived').checked = state.hideArchived;
   $('hideRemote').checked = state.hideRemote;
   $('staleOnly').checked = state.staleOnly;
+  $('mineOnly').checked = state.mineOnly;
   $('hideBadges').checked = state.hideBadges;
   $('branchList').classList.toggle('no-badges', state.hideBadges);
   $('staleDays').value = state.staleDays;
