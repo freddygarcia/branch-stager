@@ -1,12 +1,15 @@
 // The Jira panel: issues from a JQL query or a saved filter, each with the branches whose
 // name contains its key; issues that have a branch are listed first. Jira does not accept calls from other sites' pages, so the helper
 // calls it for the page. Results are not saved.
+//
+// Also the issue status of each selected branch (the key in its name), flagged when the
+// issue is done or not in Settings > Jira > Expected statuses.
 
 import { filterBranches } from './branches.js';
 import { $, count, el } from './dom.js';
 import { helperPost } from './api.js';
 import { jiraAlwaysOpen } from './layout.js';
-import { setSelected } from './selected.js';
+import { renderSelected, setSelected } from './selected.js';
 import { ARCHIVED, isProtected, listed, save, session, state } from './state.js';
 
 const jira = { filters: [], url: '', issues: [], next: null, jql: '', loading: false, error: null, setup: null };
@@ -20,6 +23,73 @@ function branchesFor(key) {
   return listed().filter((n) =>
     re.test(n) && n !== state.base && !isProtected(n) && !ARCHIVED.test(n));
 }
+
+// ---------------------------------------------------------------- selected branches' issues
+
+// key -> issue; null when Jira doesn't know the key, or the lookup failed. Kept until Reload.
+const known = new Map();
+const asking = new Set();
+
+/** The issue key in a branch name, upper-cased: feature/ods-3821-fix -> ODS-3821; else null. */
+export function keyOf(name) {
+  const m = /(?:^|[^a-z0-9])([a-z][a-z0-9_]+-[0-9]+)(?![0-9])/i.exec(name);
+  return m ? m[1].toUpperCase() : null;
+}
+
+/** The issue of branch `name`, if loaded. */
+export const issueOf = (name) => known.get(keyOf(name)) || null;
+
+/** Why the issue of a selected branch looks wrong for an environment, or null. */
+export function issueProblem(issue) {
+  if (!issue) return null;
+  const expect = state.jiraExpect.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  if (expect.length) {
+    return expect.includes(issue.status.toLowerCase()) ? null : `${issue.key} is ${issue.status}, not ${state.jiraExpect}`;
+  }
+  return issue.category === 'done' ? `${issue.key} is ${issue.status}` : null;
+}
+
+/** Look up the issues of branches `names` not known yet; then `redraw()`, if any arrived. */
+export async function loadIssues(names, redraw) {
+  if (jira.setup) return;
+  const keys = [...new Set(names.map(keyOf).filter(Boolean))].filter((k) => !known.has(k) && !asking.has(k));
+  if (!keys.length) return;
+  keys.forEach((k) => asking.add(k));
+  try {
+    const data = await helperPost('/jira/issues', { keys, jira: settings() }, 'Jira lookup failed');
+    jira.url = data.url;
+    for (const issue of data.issues) known.set(issue.key, issue);
+  } catch (e) {
+    console.warn('Jira lookup failed', e);
+  } finally {
+    for (const k of keys) {
+      asking.delete(k);
+      if (!known.has(k)) known.set(k, null); // not asked again until Reload
+    }
+  }
+  redraw();
+}
+
+/** Look the issues up again on the next render (Reload). */
+export const forgetIssues = () => known.clear();
+
+/** The status of a selected branch's issue, a link to it; warn-colored when flagged. */
+export function issueTag(name) {
+  const issue = issueOf(name);
+  if (!issue) return null;
+  const problem = issueProblem(issue);
+  const cls = problem ? 'warn' : { done: 'ok', indeterminate: 'prog' }[issue.category] || '';
+  return el('a', {
+    class: `tag ${cls}`,
+    href: `${jira.url}/browse/${encodeURIComponent(issue.key)}`,
+    target: '_blank',
+    rel: 'noopener',
+    draggable: false,
+    title: `${issue.key}: ${issue.summary}${problem ? `\n\n${problem}` : ''}`,
+  }, issue.status);
+}
+
+// ---------------------------------------------------------------- the panel
 
 export async function loadJiraFilters() {
   try {
@@ -48,6 +118,7 @@ async function searchJira(more = false) {
     const data = await helperPost('/jira/search', { jql, next: more ? jira.next : null, jira: settings() }, 'Jira search failed');
     if (thisRun !== run) return; // a newer search started meanwhile
     jira.issues = [...jira.issues, ...data.issues];
+    for (const issue of data.issues) known.set(issue.key, issue);
     jira.next = data.next;
     jira.url = data.url;
   } catch (e) {
@@ -140,12 +211,14 @@ export function wireJira() {
   const changed = () => {
     run++;
     Object.assign(jira, { issues: [], next: null, jql: '', loading: false, error: null });
+    forgetIssues();
     save();
-    loadJiraFilters();
+    loadJiraFilters().then(renderSelected);
   };
   for (const id of ['jiraUrl', 'jiraEmail', 'jiraToken']) {
     $(id).addEventListener('change', (e) => { state[id] = e.target.value.trim(); changed(); });
   }
+  $('jiraExpect').addEventListener('change', (e) => { state.jiraExpect = e.target.value.trim(); save(); renderSelected(); });
   $('forgetJiraToken').addEventListener('click', () => { state.jiraToken = ''; $('jiraToken').value = ''; changed(); });
   // opened by the Guided layout is not the user's choice: not saved
   $('jiraDetails').addEventListener('toggle', (e) => { if (!jiraAlwaysOpen()) { state.jiraOpen = e.target.open; save(); } });

@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-from .config import JIRA_ENV, JIRA_FIELDS, JIRA_PAGE, JIRA_TIMEOUT
+from .config import JIRA_BULK, JIRA_ENV, JIRA_FIELDS, JIRA_PAGE, JIRA_TIMEOUT
 
 
 class JiraError(Exception):
@@ -130,6 +130,15 @@ class Jira:
             "next": None if data.get("isLast", True) else data.get("nextPageToken"),
             "url": self.url,
         }
+
+    def issues(self, keys: list[str]) -> dict:
+        """The issues of `keys`; a key Jira doesn't know (or hides) is left out."""
+        found = []
+        for i in range(0, len(keys), JIRA_BULK):
+            body = {"issueIdsOrKeys": keys[i : i + JIRA_BULK], "fields": JIRA_FIELDS}
+            data = self.call("/rest/api/3/issue/bulkfetch", body) or {}
+            found += [_issue(issue) for issue in data.get("issues", [])]
+        return {"issues": found, "url": self.url}
 
 
 def _issue(issue: dict) -> dict:

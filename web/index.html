@@ -121,6 +121,23 @@
           <span class="spacer"></span>
           <button id="forgetJiraToken">Forget Jira token</button>
         </div>
+        <div style="margin-top:12px">
+          <label for="jiraExpect">Expected statuses of selected branches' issues</label>
+          <input id="jiraExpect" type="text" autocomplete="off" placeholder="e.g. Ready for QA, In QA">
+          <div class="muted" style="font-size:12.5px;margin-top:5px">The Selected list shows the status of the issue named in each branch. Statuses not listed here are flagged; leave it empty to flag only done issues.</div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Old builds</h3>
+        <div class="row">
+          <span class="muted" style="font-size:12.5px" id="oldBuildsSummary"></span>
+          <span class="spacer"></span>
+          <button id="oldBuildsAll">Tick all</button>
+          <button id="oldBuildsDelete" class="danger" title="Delete the ticked branches, locally or on origin as listed. A branch that moved since the last Reload is kept.">Delete</button>
+        </div>
+        <div class="list" id="oldBuildsList" style="margin-top:8px;max-height:260px;overflow:auto" hidden></div>
+        <div id="oldBuildsStatus" style="font-size:12.5px;margin-top:6px" hidden></div>
       </div>
 
       <div id="backupSettings" class="settings-section">
@@ -211,6 +228,7 @@
         <span class="spacer"></span>
         <span id="drySummary" class="muted" style="font-size:12.5px"></span>
       </div>
+      <div id="cleanupNote" hidden></div>
       <div id="staleNote" hidden></div>
 
       <div id="buildControls">

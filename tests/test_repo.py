@@ -267,5 +267,51 @@ class RebuildPushTest(GitTestCase):
         self.assertEqual(self.origin_sha("env/qa"), other)
 
 
+class DeleteListedTest(GitTestCase):
+    """Settings > Old builds: delete local and origin branches, only where they were seen."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.origin = self.path.parent / "origin.git"
+        self.git("init", "--quiet", "--bare", str(self.origin))
+        self.git("remote", "add", "origin", str(self.origin))
+        self.git("branch", "integration/1", "feature-a")
+        self.git("push", "--quiet", "origin", "integration/1")
+        self.repo = Repo(self.path)
+
+    def on_origin(self, name: str) -> bool:
+        return self.git("--git-dir", str(self.origin), "branch", "--list", name) != ""
+
+    def test_local(self):
+        self.assertEqual(
+            self.repo.delete_listed("integration/1", self.sha("feature-a")),
+            "Deleted integration/1",
+        )
+        self.assertIsNone(self.repo.local_sha("integration/1"))
+        self.assertTrue(self.on_origin("integration/1"))
+
+    def test_local_moved(self):
+        with self.assertRaisesRegex(GitError, "changed since the last Reload"):
+            self.repo.delete_listed("integration/1", self.sha("feature-b"))
+        self.assertIsNotNone(self.repo.local_sha("integration/1"))
+
+    def test_origin(self):
+        self.repo.delete_listed("origin/integration/1", self.sha("feature-a"))
+        self.assertFalse(self.on_origin("integration/1"))
+        self.assertIsNotNone(self.repo.local_sha("integration/1"))
+
+    def test_origin_moved(self):
+        with self.assertRaisesRegex(GitError, "changed since the last Reload"):
+            self.repo.delete_listed("origin/integration/1", self.sha("feature-b"))
+        self.assertTrue(self.on_origin("integration/1"))
+
+    def test_refused(self):
+        with self.assertRaisesRegex(GitError, "protected"):
+            self.repo.delete_listed("master", self.sha("master"))
+        with self.assertRaisesRegex(GitError, "checked out"):
+            self.git("checkout", "--quiet", "integration/1")
+            self.repo.delete_listed("integration/1", self.sha("feature-a"))
+
+
 if __name__ == "__main__":
     unittest.main()

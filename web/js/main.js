@@ -12,8 +12,9 @@ import { renderBase, renderBranches, wireBranches } from './branches.js';
 import { wireConflicts } from './conflicts.js';
 import { $, el } from './dom.js';
 import { renderHistory, wireHistory } from './history.js';
-import { loadJiraFilters, renderJiraFilters, wireJira } from './jira.js';
+import { forgetIssues, loadJiraFilters, renderJiraFilters, wireJira } from './jira.js';
 import { showSettings, wireLayout } from './layout.js';
+import { renderOldBuilds, wireOldBuilds } from './oldbuilds.js';
 import { envTarget, wireProfiles } from './profiles.js';
 import { renderSelected, wireSelected } from './selected.js';
 import { ready, source } from './sources/index.js';
@@ -23,7 +24,7 @@ function renderSettings() {
   const src = source();
   for (const node of document.querySelectorAll('[data-source]')) node.hidden = node.dataset.source !== src.id;
   $('source').value = src.id;
-  for (const id of ['localPath', 'owner', 'repo', 'token', 'prefix', 'jiraUrl', 'jiraEmail', 'jiraToken']) {
+  for (const id of ['localPath', 'owner', 'repo', 'token', 'prefix', 'jiraUrl', 'jiraEmail', 'jiraToken', 'jiraExpect']) {
     $(id).value = state[id];
   }
   $('hideRemote').checked = state.hideRemote;
@@ -43,6 +44,7 @@ export function renderAll() {
   renderBranches();
   renderSelected();
   renderHistory();
+  renderOldBuilds();
 }
 
 /** List the branches again (the local clone fetches origin first). */
@@ -59,13 +61,16 @@ export async function reload() {
   } catch (e) {
     clearBranches();
     $('branchList').replaceChildren(el('div', { class: 'empty err' }, e.message));
+    renderOldBuilds();
     return;
   } finally {
     $('reload').disabled = false;
   }
+  forgetIssues(); // issue statuses are looked up again
   renderBase();
   renderBranches();
   renderSelected();
+  renderOldBuilds();
 }
 
 function wireSettings() {
@@ -94,7 +99,7 @@ function wireSettings() {
     if (state.token && ready()) reload();
   });
   $('forgetToken').addEventListener('click', () => { state.token = ''; save(); clearBranches(); renderAll(); });
-  $('prefix').addEventListener('change', (e) => { state.prefix = e.target.value.trim(); save(); });
+  $('prefix').addEventListener('change', (e) => { state.prefix = e.target.value.trim(); save(); renderOldBuilds(); });
   $('staleDays').addEventListener('change', (e) => {
     const days = Math.round(Number(e.target.value));
     state.staleDays = days >= 0 ? days : 15; // 0 turns stale tags and the Stale only filter off
@@ -135,6 +140,7 @@ async function start() {
   wireConflicts();
   wireApply();
   wireHistory();
+  wireOldBuilds();
   showImportedNote();
   if (!envTarget()) renewName(); // first visit: a timestamped target to start from
   $('jql').value = state.jql;
