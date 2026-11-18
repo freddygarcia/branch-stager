@@ -40,6 +40,14 @@ async function dryRun(base, branches) {
 /** The conflicted regions of `path` in a dry-run merge tree: { status, data }. */
 const conflict = (tree, path) => helper(`/conflict?tree=${tree}&path=${encodeURIComponent(path)}`);
 
+// Open in editor: a worktree stopped on a branch's conflicts, and saving its fix (resolve.py)
+const resolve = {
+  status: (head) => helper(`/resolve?head=${encodeURIComponent(head)}`),
+  open: (body) => helperPost('/resolve/open', body, 'Open in editor failed'),
+  save: (head) => helperPost('/resolve/save', { head }, 'Save fix failed'),
+  discard: (head) => helperPost('/resolve/discard', { head }, 'Discard failed'),
+};
+
 export default {
   id: 'local',
   settingField: 'localPath',
@@ -53,4 +61,5 @@ export default {
   apply,
   dryRun,
   conflict,
+  resolve,
 };

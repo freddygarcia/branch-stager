@@ -220,6 +220,24 @@ class Repo:
         how = " (replaced)" if lease else ""
         return True, f"Pushed {name} to {REMOTE}{how}"
 
+    def has_saved_fixes(self) -> bool:
+        """
+        True when git rerere has recorded a conflict resolution (a "saved fix"). Its cache
+        is in the common git dir, so a fix saved in one worktree is reused in every other.
+        """
+        common = Path(self.out("rev-parse", "--git-common-dir"))
+        if not common.is_absolute():
+            common = self.path / common
+        return any((common / "rr-cache").glob("*/postimage*"))
+
+    def worktrees(self) -> set[Path]:
+        """The folders of every worktree of this clone, the main checkout included."""
+        return {
+            Path(line.removeprefix("worktree ")).resolve()
+            for line in self.out("worktree", "list", "--porcelain").splitlines()
+            if line.startswith("worktree ")
+        }
+
     def delete_branch(self, name: str) -> None:
         self.run("branch", "-D", name, check=False)
 

@@ -21,6 +21,8 @@ const DEFAULTS = {
   deleteOnFail: true, // sent to the helper; a rebuild never leaves a half-built branch anyway
   target: '', // the branch Apply builds when no profile is active (a profile keeps its own)
   mergeFf: false, // Settings > Build > Merge strategy: fast-forward instead of --no-ff
+  editor: 'vscode', // Settings > Build > Fix conflicts in: vscode, cursor or custom
+  editorCommand: '', // its custom command, with {folder} {file} {line} placeholders
   history: [],
   historyOpen: true,
   // saved merges, switched between with Load: [{ name, base, branches, at, target }].

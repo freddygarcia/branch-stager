@@ -9,6 +9,83 @@ from pathlib import Path
 from .config import DRY_RUN_IDENTITY
 from .git_repo import GitError, Repo
 
+# git rerere, on for one command: replay a saved fix and stage it (autoUpdate). A fix is
+# saved by "Open in editor" (resolve.py); rerere keeps it in the clone's rr-cache.
+RERERE = ("-c", "rerere.enabled=true", "-c", "rerere.autoUpdate=true")
+SAVED_FIX = re.compile(r"^(?:Staged|Resolved) '(.+)' using previous resolution\.$", re.M)
+
+
+def unmerged(repo: Repo, worktree: Path) -> list[str]:
+    """Files of the worktree that still have a conflict."""
+    return repo.out(
+        "-c", "core.quotePath=false", "diff", "--name-only", "--diff-filter=U", cwd=worktree
+    ).splitlines()
+
+
+def merge_in_progress(repo: Repo, worktree: Path) -> bool:
+    return repo.succeeds("rev-parse", "--quiet", "--verify", "MERGE_HEAD", cwd=worktree)
+
+
+def saved_fixes(result) -> list[str]:
+    """The files a merge resolved with a saved fix, from its output."""
+    return SAVED_FIX.findall(f"{result.stdout}\n{result.stderr}")
+
+
+def finish_with_saved_fixes(
+    repo: Repo, worktree: Path, result, *, env: dict[str, str] | None = None
+) -> list[str] | None:
+    """
+    After a merge that stopped on conflicts: when saved fixes resolved every one of them,
+    commit the merge and return the files they fixed; else None (the merge is left as is).
+    """
+    if unmerged(repo, worktree) or not merge_in_progress(repo, worktree):
+        return None
+    done = repo.run(
+        "commit", "--quiet", "--no-edit", "--no-verify", cwd=worktree, check=False, env=env
+    )
+    return saved_fixes(result) if done.returncode == 0 else None
+
+
+class SavedFixCheck:
+    """
+    For the dry run: merge a conflicting branch for real, in one temporary worktree made
+    on first use, to see whether saved fixes resolve all its conflicts.
+    """
+
+    def __init__(self, repo: Repo):
+        self.repo = repo
+        self.worktree: Path | None = None
+
+    def merge(self, current: str, sha: str, head: str) -> tuple[str, list[str]] | None:
+        """(the merge commit, the files fixed) when saved fixes resolve it all, else None."""
+        repo = self.repo
+        if self.worktree is None:
+            self.worktree = Path(tempfile.mkdtemp(prefix="branch-merger-"))
+            repo.run("worktree", "add", "--quiet", "--detach", str(self.worktree), current)
+        else:
+            repo.run("checkout", "--quiet", "--detach", "--force", current, cwd=self.worktree)
+        result = repo.run(
+            *RERERE,
+            "merge",
+            "--no-ff",
+            "--no-verify",
+            "-m",
+            f"Branch Merger dry run: merge {head}",
+            sha,
+            cwd=self.worktree,
+            check=False,
+            env=DRY_RUN_IDENTITY,
+        )
+        fixed = finish_with_saved_fixes(repo, self.worktree, result, env=DRY_RUN_IDENTITY)
+        if fixed is None:
+            repo.run("merge", "--abort", cwd=self.worktree, check=False)
+            return None
+        return repo.out("rev-parse", "HEAD", cwd=self.worktree), fixed
+
+    def close(self) -> None:
+        if self.worktree is not None:
+            self.repo.remove_worktree(self.worktree)
+
 
 def dry_run(repo: Repo, base: str, heads: list[str]) -> list[dict]:
     """
@@ -17,7 +94,21 @@ def dry_run(repo: Repo, base: str, heads: list[str]) -> list[dict]:
     (removed by git gc) so the next branch is checked against everything merged before
     it, like Apply. A conflicting branch is left out of the chain: the branches after it
     are checked as if it had been removed (Apply itself would stop there).
+    A conflict that saved fixes (git rerere) resolve completely counts as clean, with
+    `fixed`: the files they fixed. Checking that takes a real merge in a temporary worktree,
+    so it only happens when the clone has saved fixes.
     """
+    check = SavedFixCheck(repo) if repo.has_saved_fixes() else None
+    try:
+        return _dry_run(repo, base, heads, check)
+    finally:
+        if check is not None:
+            check.close()
+
+
+def _dry_run(
+    repo: Repo, base: str, heads: list[str], check: SavedFixCheck | None
+) -> list[dict]:
     current = repo.resolve(base)
     results: list[dict] = []
     for head in heads:
@@ -59,6 +150,11 @@ def dry_run(repo: Repo, base: str, heads: list[str]) -> list[dict]:
             )
             results.append({"head": head, "status": "clean"})
         elif merge.returncode == 1:
+            fixed = check.merge(current, sha, head) if check else None
+            if fixed is not None:
+                current, files = fixed
+                results.append({"head": head, "status": "clean", "fixed": files})
+                continue
             files = list(dict.fromkeys(line for line in lines[1:] if line))
             # the merged tree (markers included) stays readable until git gc
             results.append(
@@ -311,6 +407,8 @@ class MergeRun:
         self.fast_forwarded = 0
         self.up_to_date = 0
         self.conflicted = False
+        # rerere only when there is a saved fix to replay: else it would start a cache
+        self.rerere = RERERE if repo.has_saved_fixes() else ()
         # the commits merged: {"base": sha, "heads": {name: sha}}, returned on success
         self.built: dict = {}
 
@@ -330,6 +428,7 @@ class MergeRun:
         # --no-verify: like the GitHub API merge, no local hooks run on the merge commit
         message = f"Merge branch '{head}' into {self.name}"
         result = repo.run(
+            *self.rerere,
             "merge",
             "--ff" if self.ff else "--no-ff",
             "--no-verify",
@@ -339,18 +438,23 @@ class MergeRun:
             cwd=worktree,
             check=False,
         )
-        if result.returncode == 0:
+        fixed = (
+            finish_with_saved_fixes(repo, worktree, result)
+            if result.returncode != 0 and self.rerere
+            else None
+        )
+        if result.returncode == 0 or fixed is not None:
             self.merged += 1
             self.fast_forwarded += fast_forward
             self.merged_heads.append(head)
             short = repo.out("rev-parse", "--short=8", "HEAD", cwd=worktree)
             how = "  (fast-forward)" if fast_forward else ""
+            if fixed is not None:
+                how = f"  (saved fix for {', '.join(fixed) or 'its conflicts'})"
             self.say(f"  ✓ {head}  → {short}{how}", "ok")
             return True
 
-        files = repo.out(
-            "diff", "--name-only", "--diff-filter=U", cwd=worktree
-        ).splitlines()
+        files = unmerged(repo, worktree)
         repo.run("merge", "--abort", cwd=worktree, check=False)
         self.conflicted = bool(files)
         if files:
