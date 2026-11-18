@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import merge
+from . import merge, resolve
 from .config import (
     API_HEADER,
     JQL_MAX,
@@ -128,6 +128,41 @@ def conflict(req: Request) -> dict:
     return conflict_hunks(req.repo, tree, path)
 
 
+def _head(req: Request) -> str:
+    head = req.body.get("head") if req.body else req.arg("head")
+    if not isinstance(head, str) or not head:
+        msg = "head is required"
+        raise BadRequest(msg)
+    return head
+
+
+def resolve_status(req: Request) -> dict:
+    return resolve.status(req.repo, _head(req))
+
+
+def resolve_open(req: Request) -> dict:
+    heads = req.str_list("branches", non_empty=True)
+    with WRITE_LOCK:
+        return resolve.open_conflict(
+            req.repo,
+            str(req.body.get("base", "")),
+            heads,
+            _head(req),
+            str(req.body.get("editor") or "vscode"),
+            str(req.body.get("command") or ""),
+        )
+
+
+def resolve_save(req: Request) -> dict:
+    with WRITE_LOCK:
+        return resolve.save_fix(req.repo, _head(req))
+
+
+def resolve_discard(req: Request) -> dict:
+    with WRITE_LOCK:
+        return resolve.discard(req.repo, _head(req))
+
+
 def fetch(req: Request) -> dict:
     with WRITE_LOCK:
         req.repo.fetch()
@@ -177,6 +212,10 @@ ROUTES: dict[tuple[str, str], Callable[[Request], dict]] = {
     ("GET", "/api/branches"): branches,
     ("GET", "/api/compare"): compare,
     ("GET", "/api/conflict"): conflict,
+    ("GET", "/api/resolve"): resolve_status,
+    ("POST", "/api/resolve/open"): resolve_open,
+    ("POST", "/api/resolve/save"): resolve_save,
+    ("POST", "/api/resolve/discard"): resolve_discard,
     ("POST", "/api/fetch"): fetch,
     ("POST", "/api/dry-run"): dry_run,
     ("POST", "/api/apply"): apply,

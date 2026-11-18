@@ -19,6 +19,9 @@ const dryKey = () => JSON.stringify([state.base, session.shas[state.base], state
 /** The branches merged before the selected branch at `i`, as "base + a + b". */
 export const mergedBefore = (i) => [state.base, ...state.selected.slice(0, i)].join(' + ');
 
+/** Forget the last result, so the next scheduleDryRun checks again (a fix was saved). */
+export const forgetDryRun = () => { dry = NONE; };
+
 export function scheduleDryRun() {
   if (!source().dryRun || !state.selected.length || !state.base || !session.branches.length) {
     dry = NONE;
@@ -51,6 +54,9 @@ export function dryBadge(name, i) {
   const r = dry.results[name];
   if (!r) return null;
   const after = mergedBefore(i);
+  if (r.status === 'clean' && r.fixed) {
+    return el('span', { class: 'tag ok', title: `Merges into ${after} with a saved fix for:\n${r.fixed.join('\n')}` }, '✓ fix');
+  }
   if (r.status === 'clean') return el('span', { class: 'tag ok', title: `Merges cleanly into ${after}` }, '✓');
   if (r.status === 'contained') return el('span', { class: 'tag', title: `Already contained in ${after}: nothing to merge` }, 'in base');
   if (r.status === 'conflict') {

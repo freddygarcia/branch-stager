@@ -34,6 +34,7 @@ Needs Python 3.9+, `git` 2.38+ and a modern browser. No packages to install.
 - **Your working copy is never touched.** Merges run in a temporary worktree.
 - **Nothing is pushed unless you ask.** Tick **Push to origin** next to Create.
 - **A conflict changes nothing.** The target branch only moves if every merge succeeds.
+- **Fix a conflict once.** In the conflict view, **Open in editor** stops the merge on that branch's conflicts in a folder next to your clone (`<clone>-conflicts/<branch>`) and opens it in VS Code or Cursor (Settings › Build). Fix the files, press **Save fix**, and every later dry run and Apply reuses the fix (git rerere). After the first saved fix, git rerere also applies to merges you run yourself in that clone.
 - **Profiles** save a setup (branches, order, base, target) so you can rebuild `env/qa` or `env/staging` later with one click.
 - **Jira** (optional): list issues from a filter or JQL and add their branches. Set it up in **Settings › Jira**.
 - **GitHub mode** (optional): work against the GitHub API instead of a local clone. Set it up in **Settings › Source**.

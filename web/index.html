@@ -93,6 +93,20 @@
           </div>
           <div id="mergeHint" class="hint"></div>
         </fieldset>
+        <fieldset id="editorPick" class="field" data-source="local" style="margin-top:14px">
+          <legend>Fix conflicts in</legend>
+          <div class="seg" role="radiogroup" aria-describedby="editorHint">
+            <label><input type="radio" name="editor" value="vscode" checked><span>VS Code</span></label>
+            <label><input type="radio" name="editor" value="cursor"><span>Cursor</span></label>
+            <label><input type="radio" name="editor" value="custom"><span>Custom command</span></label>
+          </div>
+          <div id="editorCommandRow" hidden style="margin-top:8px">
+            <label for="editorCommand">Command</label>
+            <input id="editorCommand" type="text" spellcheck="false" autocomplete="off" placeholder="idea --line {line} {file}">
+            <div class="hint"><code>{folder}</code> the conflict folder, <code>{file}</code> the first conflicted file, <code>{line}</code> its first conflict. Quote like a shell; it runs without one. With no placeholder, the folder is added at the end. Examples: <code>subl {folder} {file}:{line}</code>, <code>open -a "IntelliJ IDEA" {folder}</code>.</div>
+          </div>
+          <div id="editorHint" class="hint">The conflict view's <b>Open in editor</b> stops the merge on the branch's conflicts in a folder next to your clone. Fix them there and press <b>Save fix</b>: every later dry run and Apply reuses the fix (git rerere).</div>
+        </fieldset>
       </div>
 
       <div class="settings-section">
@@ -230,11 +244,24 @@
     <div class="row" style="margin-bottom:6px">
       <h2 style="margin:0;word-break:break-all" id="conflictTitle">Conflicts</h2>
       <span class="spacer"></span>
+      <button id="copyMergeCommands" title="Copy the git commands that stop the merge on these conflicts, to run in a terminal">Copy commands</button>
+      <button id="openConflict" title="Stop the merge on these conflicts in a folder next to your clone and open it in your editor (Settings › Build)">Open in editor</button>
       <button id="expandConflicts" class="icon" title="Expand every file">Expand all</button>
       <button id="collapseConflicts" class="icon" title="Collapse every file">Collapse all</button>
       <button id="closeConflicts" class="icon" title="Close">×</button>
     </div>
     <p class="muted" id="conflictSub" style="margin:0 0 10px"></p>
+    <div id="resolveBar" hidden>
+      <div class="row">
+        <span>Fixing in <code id="resolvePath"></code></span>
+        <button id="copyResolvePath" class="icon" title="Copy the folder's path">Copy path</button>
+        <span class="spacer"></span>
+        <button id="saveFix" class="primary" title="Remember the files as they are now as the fix for these conflicts, and remove the folder">Save fix</button>
+        <button id="discardFix" title="Remove the folder and what was fixed in it">Discard</button>
+      </div>
+      <p class="muted" style="margin:6px 0 0;font-size:12.5px">Fix the files and save them; no need to commit. Only the conflicted lines are remembered: other edits in that folder are dropped.</p>
+    </div>
+    <p id="resolveMsg" hidden style="margin:6px 0 10px"></p>
     <div id="conflictFiles"></div>
   </section>
 

@@ -1,14 +1,22 @@
 // The conflict view (local clone only): the conflicting lines of one selected branch,
 // read on demand, file by file, from the in-memory merge tree the dry run wrote.
+// Open in editor stops the real merge on those conflicts in a folder next to the clone;
+// Save fix remembers the fix there (git rerere) for every later dry run and Apply.
 
 import { $, el } from './dom.js';
-import { dry, mergedBefore } from './dryrun.js';
+import { dry, forgetDryRun, mergedBefore } from './dryrun.js';
 import { layout } from './layout.js';
+import { renderSelected } from './selected.js';
 import { source } from './sources/index.js';
-import { state } from './state.js';
+import { save, state } from './state.js';
 
 // the selected branch whose conflicts are shown, if any
 let head = null;
+// the open conflict folder of `head`: { head, path }, null when there is none
+let fixing = null;
+// where `head`'s conflicts are fixed, open or not: { head, path, repo } from the helper
+let folders = null;
+const EDITOR_NAMES = { vscode: 'VS Code', cursor: 'Cursor', custom: 'your command' };
 
 export function showConflicts(name) {
   head = name;
@@ -33,6 +41,10 @@ export function renderConflicts() {
   const key = JSON.stringify([head, r.tree, after]);
   if (box.dataset.key === key) return;
   box.dataset.key = key;
+  if (fixing?.head !== head) fixing = null;
+  say('');
+  renderResolveBar();
+  refreshResolve();
 
   $('conflictTitle').textContent = `Conflicts: ${head}`;
   $('conflictSub').replaceChildren(
@@ -92,7 +104,198 @@ async function loadHunks(tree, path, body, notes, labels) {
   if (data.truncated) say('Truncated: the file has more conflicted lines than shown.');
 }
 
+// ---------------------------------------------------------------- Open in editor
+
+function say(text, cls = 'muted') {
+  const msg = $('resolveMsg');
+  msg.hidden = !text;
+  msg.className = cls;
+  msg.textContent = text;
+}
+
+function renderResolveBar() {
+  const open = Boolean(head) && fixing?.head === head;
+  $('resolveBar').hidden = !open;
+  $('resolvePath').textContent = open ? fixing.path : '';
+  $('openConflict').textContent = open ? 'Open again' : 'Open in editor';
+  resetDiscard();
+}
+
+/** Ask the helper whether `head` already has a conflict folder (from an earlier visit). */
+async function refreshResolve() {
+  const asked = head;
+  const { status, data } = await source().resolve.status(asked);
+  if (asked !== head) return;
+  folders = status === 200 ? { head: asked, path: data.path, repo: data.repo } : null;
+  fixing = status === 200 && data.open ? { head: asked, path: data.path } : null;
+  renderResolveBar();
+}
+
+const sh = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
+
+/**
+ * The git commands that do what Open in editor does, to run in a terminal: the same
+ * folder, the same merges (a branch before `head` that the dry run left out is left
+ * out), git rerere on so the fix is saved when the merge is committed.
+ */
+function mergeCommands() {
+  const { path, repo } = folders;
+  const i = state.selected.indexOf(head);
+  const rerere = '-c rerere.enabled=true -c rerere.autoUpdate=true';
+  const lines = [
+    `cd ${sh(repo)}`,
+    `git worktree add --detach ${sh(path)} ${sh(state.base)}`,
+    `cd ${sh(path)}`,
+  ];
+  for (const name of state.selected.slice(0, i)) {
+    const r = dry.results[name];
+    if (r?.status === 'conflict' || r?.status === 'error') {
+      lines.push(`# ${name} left out: it conflicts too`);
+    } else if (r?.fixed) {
+      // a saved fix resolves it: rerere stages the fix, the commit finishes the merge
+      lines.push(`git ${rerere} merge --no-ff --no-edit ${sh(name)} || git commit --no-edit`);
+    } else {
+      lines.push(`git merge --no-ff --no-edit ${sh(name)}`);
+    }
+  }
+  lines.push(
+    `git ${rerere} -c merge.conflictStyle=diff3 merge --no-ff --no-edit ${sh(head)}`,
+    '# fix the files, then save the fix (git rerere records it) and remove the folder:',
+    '#   git add -A && git commit --no-edit',
+    `#   cd ${sh(repo)} && git worktree remove ${sh(path)}`,
+  );
+  return `${lines.join('\n')}\n`;
+}
+
+async function copyMergeCommands() {
+  if (folders?.head !== head) await refreshResolve();
+  if (folders?.head !== head) { say('Could not reach the helper to build the commands.', 'err'); return; }
+  const open = fixing?.head === head;
+  try {
+    await navigator.clipboard.writeText(mergeCommands());
+    say(open
+      ? 'Commands copied. The folder is already open here: Discard it first, or skip to fixing the files.'
+      : 'Commands copied: paste them in a terminal.', open ? 'warn' : 'ok');
+  } catch {
+    say('Could not copy to the clipboard.', 'err');
+  }
+}
+
+/** Check the selection again: a saved fix turns the conflict into "✓ fix". */
+function checkAgain() {
+  forgetDryRun();
+  renderSelected();
+}
+
+async function openInEditor() {
+  const button = $('openConflict');
+  const asked = head;
+  button.disabled = true;
+  say('Merging up to the conflicts…');
+  try {
+    const data = await source().resolve.open({
+      base: state.base, branches: state.selected, head: asked, editor: state.editor, command: state.editorCommand,
+    });
+    if (asked !== head) return;
+    if (!data.files.length) {
+      fixing = null;
+      say('No conflict left: saved fixes cover them all.', 'ok');
+      checkAgain();
+      return;
+    }
+    fixing = { head: asked, path: data.path };
+    const where = `${data.file}:${data.line}`;
+    const kept = data.reused ? ' Your earlier changes there are kept.' : '';
+    if (data.opened) {
+      say(`Opened in ${EDITOR_NAMES[state.editor]} at ${where}.${kept}`, 'ok');
+    } else {
+      // the editor's command line tool was not found: its URL handler opens the file
+      window.location.href = data.url;
+      say(`Opening ${where} in ${EDITOR_NAMES[state.editor]}.${kept} If nothing opens, open the folder below yourself.`, 'ok');
+    }
+  } catch (e) {
+    say(e.message, 'err');
+  } finally {
+    button.disabled = false;
+    renderResolveBar();
+  }
+}
+
+async function saveFix() {
+  const asked = head;
+  $('saveFix').disabled = true;
+  try {
+    const data = await source().resolve.save(asked);
+    fixing = null;
+    const unsaved = data.unsaved.length
+      ? ` Not remembered (deleted on one side or binary), fix these in the branch itself: ${data.unsaved.join(', ')}.`
+      : '';
+    say(data.committed
+      ? 'The merge was committed in the editor: its fix was saved then.'
+      : `Fix saved for ${data.saved.join(', ') || 'no file'}.${unsaved}`, unsaved ? 'warn' : 'ok');
+    checkAgain();
+  } catch (e) {
+    say(e.message, 'err');
+  } finally {
+    $('saveFix').disabled = false;
+    renderResolveBar();
+  }
+}
+
+// Discard drops the user's work in that folder: it takes a second click
+let discardArmed = false;
+function resetDiscard() {
+  discardArmed = false;
+  $('discardFix').textContent = 'Discard';
+}
+
+async function discardFix() {
+  if (!discardArmed) {
+    discardArmed = true;
+    $('discardFix').textContent = 'Discard? Click again';
+    return;
+  }
+  try {
+    await source().resolve.discard(head);
+    fixing = null;
+    say('Discarded.');
+  } catch (e) {
+    say(e.message, 'err');
+  }
+  renderResolveBar();
+}
+
 export function wireConflicts() {
+  $('openConflict').addEventListener('click', openInEditor);
+  $('copyMergeCommands').addEventListener('click', copyMergeCommands);
+  $('saveFix').addEventListener('click', saveFix);
+  $('discardFix').addEventListener('click', discardFix);
+  $('discardFix').addEventListener('blur', resetDiscard);
+  $('copyResolvePath').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(fixing?.path || '');
+      say('Path copied.');
+    } catch {
+      say('Could not copy: select the path and copy it.', 'warn');
+    }
+  });
+  const showCommand = () => { $('editorCommandRow').hidden = state.editor !== 'custom'; };
+  $('editorPick').addEventListener('change', (e) => {
+    if (e.target.name !== 'editor') return;
+    state.editor = e.target.value;
+    save();
+    showCommand();
+    if (state.editor === 'custom' && !state.editorCommand) $('editorCommand').focus();
+  });
+  $('editorCommand').addEventListener('input', (e) => {
+    state.editorCommand = e.target.value;
+    save();
+  });
+  if (!EDITOR_NAMES[state.editor]) state.editor = 'vscode'; // e.g. the removed "Just the folder"
+  document.querySelector(`input[name="editor"][value="${state.editor}"]`).checked = true;
+  $('editorCommand').value = state.editorCommand;
+  showCommand();
+
   $('closeConflicts').addEventListener('click', () => { head = null; renderConflicts(); });
   // opening a file loads its conflicts (the toggle event), so Expand all loads them all
   const setOpen = (open) => { for (const d of $('conflictFiles').querySelectorAll('details')) d.open = open; };
