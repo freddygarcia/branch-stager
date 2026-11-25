@@ -66,6 +66,38 @@ export function showSettings() {
   if (guided()) showDrawer('settings');
 }
 
+// ---------------------------------------------------------------- expanded panels
+
+// The same panel, styled as a modal (app.css .panel.expanded), so its filters, checkboxes
+// and drag-to-reorder keep working; nothing is moved in the DOM. One open at a time.
+// `focus`: what to focus on opening (else the button).
+const EXPANDABLE = {
+  branchesPanel: { button: 'branchesExpand', what: 'branch list', focus: 'filter' },
+  selectedPanel: { button: 'selectedExpand', what: 'selected branches' },
+};
+const expandedPanel = () => Object.keys(EXPANDABLE).find((id) => $(id).classList.contains('expanded')) || '';
+
+function labelExpand(id, on) {
+  const { button, what } = EXPANDABLE[id];
+  const btn = $(button);
+  btn.setAttribute('aria-pressed', String(on));
+  btn.setAttribute('aria-label', `${on ? 'Collapse' : 'Expand'} ${what}`);
+  btn.title = on ? 'Back to the normal size (Esc)' : `Open the ${what} in a large window (Esc closes)`;
+}
+
+function setExpanded(id, on) {
+  const open = expandedPanel();
+  if (open && open !== id) setExpanded(open, false);
+  $(id).classList.toggle('expanded', on);
+  document.documentElement.classList.toggle('panel-expanded', on);
+  $('expandScrim').hidden = !on;
+  labelExpand(id, on);
+  const { button, focus } = EXPANDABLE[id];
+  $(on && focus ? focus : button).focus();
+}
+
+const collapse = () => { const id = expandedPanel(); if (id) setExpanded(id, false); };
+
 // ---------------------------------------------------------------- guided's pieces
 
 /** Which picker tab shows, all branches or Jira issues. */
@@ -109,6 +141,10 @@ function applyLayout() {
 }
 
 function onKey(e) {
+  if (e.key === 'Escape' && expandedPanel()) {
+    collapse();
+    return;
+  }
   if (e.key === 'Escape' && openDrawer()) {
     closeDrawer();
     return;
@@ -140,6 +176,11 @@ export function wireLayout(rerender) {
     $(d.close).addEventListener('click', () => closeDrawer());
   }
   $('scrim').addEventListener('click', () => closeDrawer());
+  for (const [id, { button }] of Object.entries(EXPANDABLE)) {
+    labelExpand(id, false);
+    $(button).addEventListener('click', () => setExpanded(id, expandedPanel() !== id));
+  }
+  $('expandScrim').addEventListener('click', collapse);
   for (const [id, tab] of [['tabJira', 'jira'], ['tabBranches', 'branches']]) {
     $(id).addEventListener('click', () => { state.pickTab = tab; save(); renderPickTabs(); });
   }
