@@ -293,3 +293,27 @@ html[data-drawer=settings] #settingsPanel, html[data-drawer=history] #historyBox
     background: var(--panel); border-radius: 0 0 12px 12px;
   }
 }
+
+/* ---------------------------------------------------------------- expanded panels
+   The Expand button in the Branches and Selected headers lifts that same panel into a
+   large modal (both layouts). Esc, the button or a click outside closes it. */
+.icon-btn { padding: 5px 8px; line-height: 0; }
+.expand-btn .i-close, .panel.expanded .expand-btn .i-open { display: none; }
+.panel.expanded .expand-btn .i-close { display: inline; }
+#expandScrim { z-index: 45; }
+.panel.expanded {
+  position: fixed; z-index: 50; inset: 4vh max(16px, calc((100vw - 1200px) / 2)); margin: 0;
+  /* Guided strips these inside the picker tab (#pickBody > .panel) */
+  background: var(--panel); border: 1px solid var(--border); padding: 16px;
+  display: flex; flex-direction: column; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.3);
+}
+.panel.expanded > * { flex: none; }
+#branchesPanel.expanded h2 { display: block !important; }
+#branchesPanel.expanded #branchList { flex: 1 1 0; min-height: 0; max-height: none; }
+/* Selected also holds the build controls (and in Guided, conflicts and the run log): they
+   stay put and only the list scrolls, in the height left over */
+#selectedPanel.expanded { overflow: hidden; }
+#selectedPanel.expanded #selectedList { flex: 1 1 0; min-height: 80px; max-height: none; }
+.panel-head { margin-bottom: 12px; }
+.panel-head h2 { margin: 0; }
+html.panel-expanded body { overflow: hidden; }
