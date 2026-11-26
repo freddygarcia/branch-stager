@@ -129,6 +129,7 @@ export function renderSelected() {
   scheduleDryRun(); // first: the badges then show "…" rather than a stale result
   list.replaceChildren(...state.selected.map(row));
   if (!state.selected.length) list.append(el('div', { class: 'empty' }, 'No branches selected.'));
+  $('copySel').disabled = !state.selected.length;
   if (focused) [...list.querySelectorAll('.grip')].find((g) => g.dataset.name === focused)?.focus();
 
   renderDrySummary();
@@ -143,4 +144,20 @@ export function renderSelected() {
 
 export function wireSelected() {
   $('clearSel').addEventListener('click', () => setSelected([]));
+  $('copySel').addEventListener('click', copySelected);
+}
+
+/** Copy the selected branch names, one per line, in merge order; the button says how it went. */
+async function copySelected() {
+  const button = $('copySel');
+  let label;
+  try {
+    await navigator.clipboard.writeText(state.selected.join('\n'));
+    label = 'Copied';
+  } catch {
+    label = 'Copy failed';
+  }
+  button.textContent = label;
+  clearTimeout(button.resetTimer);
+  button.resetTimer = setTimeout(() => { button.textContent = 'Copy'; }, 1500);
 }
