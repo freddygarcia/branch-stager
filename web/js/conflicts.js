@@ -131,7 +131,14 @@ async function refreshResolve() {
   renderResolveBar();
 }
 
-const sh = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
+const quote = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
+const sh = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : quote(s));
+/**
+ * A line of text for the reader, printed with echo. Not a `#` comment: an interactive
+ * zsh runs `#` as a command (interactive_comments is off by default) and reads `(…)` as
+ * a glob qualifier.
+ */
+const note = (s) => `echo ${quote(s)}`;
 
 /**
  * The git commands that do what Open in editor does, to run in a terminal: the same
@@ -150,7 +157,7 @@ function mergeCommands() {
   for (const name of state.selected.slice(0, i)) {
     const r = dry.results[name];
     if (r?.status === 'conflict' || r?.status === 'error') {
-      lines.push(`# ${name} left out: it conflicts too`);
+      lines.push(note(`${name} left out: it conflicts too`));
     } else if (r?.fixed) {
       // a saved fix resolves it: rerere stages the fix, the commit finishes the merge
       lines.push(`git ${rerere} merge --no-ff --no-edit ${sh(name)} || git commit --no-edit`);
@@ -160,9 +167,9 @@ function mergeCommands() {
   }
   lines.push(
     `git ${rerere} -c merge.conflictStyle=diff3 merge --no-ff --no-edit ${sh(head)}`,
-    '# fix the files, then save the fix (git rerere records it) and remove the folder:',
-    '#   git add -A && git commit --no-edit',
-    `#   cd ${sh(repo)} && git worktree remove ${sh(path)}`,
+    note('Next: fix the files, then save the fix (git rerere records it) and remove the folder:'),
+    note('  git add -A && git commit --no-edit'),
+    note(`  cd ${sh(repo)} && git worktree remove ${sh(path)}`),
   );
   return `${lines.join('\n')}\n`;
 }
