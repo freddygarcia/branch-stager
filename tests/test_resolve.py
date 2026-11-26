@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from unittest import mock
 
@@ -81,6 +82,27 @@ class ResolveTest(GitTestCase):
         self.assertEqual(self.git("show", "env-qa:file.txt") + "\n", FIX)
         self.assertEqual(self.git("worktree", "list").count("\n"), 0)
 
+    def test_saved_fix_found_when_the_conflict_style_matters(self):
+        # both sides add the same line after their change: the default conflict style
+        # leaves it out of the conflict, diff3 (the editor's) keeps it in, so the
+        # conflict reads differently and rerere only finds the fix in the same style
+        self.write("s.txt", "a\nend\n")
+        self.commit("s.txt")
+        self.branch("left", "s.txt", "L\nSAME\nend\n")
+        self.branch("right", "s.txt", "R\nSAME\nend\n")
+        heads = ["left", "right"]
+        folder = Path(resolve.open_conflict(self.repo, "master", heads, "right", "vscode")["path"])
+        (folder / "s.txt").write_text("LR\nSAME\nend\n")
+        self.assertEqual(resolve.save_fix(self.repo, "right")["saved"], ["s.txt"])
+
+        results = merge.dry_run(self.repo, "master", heads)
+        self.assertEqual(results[1], {"head": "right", "status": "clean", "fixed": ["s.txt"]})
+        result = merge.merge_into_new_branch(
+            self.repo, "env-qa", "master", heads, delete_on_fail=True
+        )
+        self.assertTrue(result["ok"], result["log"])
+        self.assertEqual(self.git("show", "env-qa:s.txt") + "\n", "LR\nSAME\nend\n")
+
     def test_nothing_left_to_fix(self):
         self.save_a_fix()
         opened = self.open()
@@ -92,6 +114,15 @@ class ResolveTest(GitTestCase):
         resolve.discard(self.repo, "clash")
         self.assertFalse(folder.exists())
         self.assertFalse(self.repo.has_saved_fixes())
+
+    def test_folder_deleted_by_hand(self):
+        # removed without `git worktree remove`: git still has it registered
+        folder = Path(self.open()["path"])
+        shutil.rmtree(folder)
+        opened = self.open()
+        self.assertFalse(opened["reused"])
+        self.assertEqual(opened["files"], ["file.txt"])
+        self.assertTrue(resolve.status(self.repo, "clash")["open"])
 
     def test_foreign_folder_refused(self):
         folder = resolve.conflict_dir(self.repo, "clash")

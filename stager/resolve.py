@@ -175,6 +175,9 @@ def _build(
     sha: str,
 ) -> None:
     folder.parent.mkdir(parents=True, exist_ok=True)
+    # a conflict folder deleted by hand (not `git worktree remove`) is still registered,
+    # and `worktree add` refuses its path until the registration is pruned
+    repo.run("worktree", "prune", check=False)
     repo.run("worktree", "add", "--quiet", "--detach", str(folder), base_sha)
     try:
         for name, commit in before:
@@ -182,8 +185,8 @@ def _build(
             if result.returncode != 0 and finish_with_saved_fixes(repo, folder, result) is None:
                 # it conflicts too: left out, like the dry run does
                 repo.run("merge", "--abort", cwd=folder, check=False)
-        # diff3: the editor shows what the common ancestor had too
-        result = _merge(repo, folder, head, sha, "-c", "merge.conflictStyle=diff3")
+        # diff3 (in RERERE): the editor shows what the common ancestor had too
+        result = _merge(repo, folder, head, sha)
         if result.returncode != 0 and not unmerged(repo, folder):
             # no conflict left: saved fixes covered them all, or the merge failed
             if finish_with_saved_fixes(repo, folder, result) is None:
@@ -193,10 +196,9 @@ def _build(
         raise
 
 
-def _merge(repo: Repo, folder: Path, name: str, sha: str, *config: str):
+def _merge(repo: Repo, folder: Path, name: str, sha: str):
     return repo.run(
         *RERERE,
-        *config,
         "merge",
         "--no-ff",
         "--no-verify",

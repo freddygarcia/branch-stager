@@ -11,7 +11,17 @@ from .git_repo import GitError, Repo
 
 # git rerere, on for one command: replay a saved fix and stage it (autoUpdate). A fix is
 # saved by "Open in editor" (resolve.py); rerere keeps it in the clone's rr-cache.
-RERERE = ("-c", "rerere.enabled=true", "-c", "rerere.autoUpdate=true")
+# rerere finds a fix by the conflict's text, which depends on the conflict style: every
+# merge that saves or replays a fix uses diff3 (what the editor shows), or a fix saved
+# there would not be found by the dry run or Apply.
+RERERE = (
+    "-c",
+    "rerere.enabled=true",
+    "-c",
+    "rerere.autoUpdate=true",
+    "-c",
+    "merge.conflictStyle=diff3",
+)
 SAVED_FIX = re.compile(r"^(?:Staged|Resolved) '(.+)' using previous resolution\.$", re.M)
 
 
