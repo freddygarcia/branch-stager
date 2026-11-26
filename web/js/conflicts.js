@@ -148,7 +148,8 @@ const note = (s) => `echo ${quote(s)}`;
 function mergeCommands() {
   const { path, repo } = folders;
   const i = state.selected.indexOf(head);
-  const rerere = '-c rerere.enabled=true -c rerere.autoUpdate=true';
+  // the same style as the helper's merges (merge.RERERE): rerere finds a fix by its text
+  const rerere = '-c rerere.enabled=true -c rerere.autoUpdate=true -c merge.conflictStyle=diff3';
   const lines = [
     `cd ${sh(repo)}`,
     `git worktree add --detach ${sh(path)} ${sh(state.base)}`,
@@ -166,7 +167,7 @@ function mergeCommands() {
     }
   }
   lines.push(
-    `git ${rerere} -c merge.conflictStyle=diff3 merge --no-ff --no-edit ${sh(head)}`,
+    `git ${rerere} merge --no-ff --no-edit ${sh(head)}`,
     note('Next: fix the files, then save the fix (git rerere records it) and remove the folder:'),
     note('  git add -A && git commit --no-edit'),
     note(`  cd ${sh(repo)} && git worktree remove ${sh(path)}`),
